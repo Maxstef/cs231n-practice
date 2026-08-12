@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cs231n-practice"
+version = "0.1.0"
+description = "Hands-on exercises for Stanford CS231n"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "ipykernel>=6.29,<8",
+    "jupyterlab>=4.4,<5",
+    "matplotlib>=3.10,<3.12",
+    "numpy>=2.2,<2.4",
+    "torch>=2.7,<3",
+    "torchvision>=0.22,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<10",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["cs231n_practice*"]
