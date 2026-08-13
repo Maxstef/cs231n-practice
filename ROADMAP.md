@@ -6,20 +6,21 @@ can be explained and implemented—not merely that its lecture was watched.
 
 ## Phase 0: Foundations
 
-- [ ] Create a reproducible Python environment.
-- [ ] Review NumPy arrays, broadcasting, vectorization, and shape reasoning.
-- [ ] Establish notebook, formatting, and testing conventions.
-- [ ] Load and inspect a small image-classification dataset.
+- [x] Create a reproducible Python environment.
+- [x] Review NumPy arrays, broadcasting, vectorization, and shape reasoning.
+- [x] Establish notebook and testing conventions.
+- [x] Load, inspect, and visualize CIFAR-10.
 
 ## Phase 1: Classical and linear classifiers
 
-- [ ] Understand the image-classification pipeline and train/validation/test
+- [x] Understand the image-classification pipeline and train/validation/test
       splits.
-- [ ] Implement k-nearest neighbors with cross-validation.
+- [x] Implement k-nearest neighbors with held-out validation.
 - [ ] Derive and implement the multiclass SVM loss.
 - [ ] Derive and implement the softmax loss.
 - [ ] Derive analytic gradients and verify them numerically.
 - [ ] Train a linear classifier with stochastic gradient descent.
+- [ ] Use k-fold cross-validation to select linear-classifier hyperparameters.
 
 ## Phase 2: Optimization and neural networks
 
