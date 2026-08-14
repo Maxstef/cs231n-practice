@@ -17,11 +17,8 @@ they are not copies of Stanford lecture slides.
 
 ### Linear classifiers
 
-- [Linear classifiers: preview](03-linear-classifiers/preview.md)
-
-The linear-classifier note is currently a preview of upcoming material. It will
-be expanded only as the corresponding notebooks and implementations are
-completed.
+- [Scores and geometry](03-linear-classifiers/scores-and-geometry.md)
+- [Multiclass SVM loss](03-linear-classifiers/multiclass-svm-loss.md)
 
 ## Conventions
 
