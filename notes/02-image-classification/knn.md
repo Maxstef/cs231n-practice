@@ -16,17 +16,17 @@ proportional to `Q × S × D`.
 
 ## L1 and L2 distances
 
-For feature vectors (x,z\in\mathbb{R}^D), the L1 or Manhattan distance is
+For feature vectors $x,z\in\mathbb{R}^D$, the L1 or Manhattan distance is
 
-\[
+$$
 d_1(x,z)=\sum_{p=1}^{D}|x_p-z_p|.
-\]
+$$
 
 The L2 or Euclidean distance is
 
-\[
+$$
 d_2(x,z)=\sqrt{\sum_{p=1}^{D}(x_p-z_p)^2}.
-\]
+$$
 
 L1 adds absolute coordinate differences. L2 squares them before summation, so
 large individual differences have greater influence. The metrics can therefore
@@ -41,16 +41,16 @@ choice of metric changes what "near" means.
 The square root can be omitted when ranking neighbors because it is strictly
 increasing for nonnegative inputs:
 
-\[
+$$
 \|x-z\|_2^2=\|x\|_2^2+\|z\|_2^2-2x^Tz.
-\]
+$$
 
-For query matrix (X_q\in\mathbb{R}^{Q\times D}) and stored matrix
-(X_s\in\mathbb{R}^{S\times D}):
+For query matrix $X_q\in\mathbb{R}^{Q\times D}$ and stored matrix
+$X_s\in\mathbb{R}^{S\times D}$:
 
 - query squared norms have shape `(Q, 1)`;
 - stored squared norms have shape `(1, S)`;
-- cross-products (X_qX_s^T) have shape `(Q, S)`;
+- cross-products $X_qX_s^T$ have shape `(Q, S)`;
 - broadcasting produces the complete `(Q, S)` distance matrix.
 
 This avoids allocating a much larger `(Q, S, D)` difference array.
