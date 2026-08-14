@@ -81,6 +81,9 @@ target/
 # Local datasets
 data/
 
+# Private study references (for example, lecture screenshots)
+notes/_references/
+
 # IPython
 profile_default/
 ipython_config.py
