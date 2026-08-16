@@ -113,12 +113,15 @@ $$
 L=-\log p_y.
 $$
 
-Softmax has not been implemented or derived yet. Before it, this project uses
-the multiclass SVM loss to turn scores into an optimization objective.
+The project studies both multiclass SVM loss and softmax cross-entropy as ways
+to turn scores into an optimization objective. See the related terminology
+notes for the distinction between the softmax function and cross-entropy loss.
 
 ## Related project material
 
 - `notebooks/04_linear_scores_and_geometry.ipynb`
+- `notes/03-linear-classifiers/softmax-cross-entropy-log-loss.md`
+- `notes/03-linear-classifiers/sigmoid-logistic-softmax.md`
 
 ## Review questions
 

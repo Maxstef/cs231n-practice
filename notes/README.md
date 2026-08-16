@@ -19,6 +19,9 @@ they are not copies of Stanford lecture slides.
 
 - [Scores and geometry](03-linear-classifiers/scores-and-geometry.md)
 - [Multiclass SVM loss](03-linear-classifiers/multiclass-svm-loss.md)
+- [Regularization](03-linear-classifiers/regularization.md)
+- [Softmax, cross-entropy, and log loss](03-linear-classifiers/softmax-cross-entropy-log-loss.md)
+- [Sigmoid, logistic, and softmax](03-linear-classifiers/sigmoid-logistic-softmax.md)
 
 ## Conventions
 
