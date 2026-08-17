@@ -51,16 +51,41 @@ larger penalty and gradient, so the model is encouraged to distribute its
 influence rather than rely heavily on a few features. L2 usually produces many
 small, nonzero weights rather than exact zeros.
 
-When used with gradient descent, the L2 part of an update is
+Gradient descent updates a parameter in the direction opposite its gradient:
 
 $$
-W \leftarrow W-\eta(2\lambda W)
-  =(1-2\eta\lambda)W,
+W \leftarrow W-\eta\frac{\partial L}{\partial W}.
 $$
 
-which explains the related term *weight decay*. The equivalence between L2
-regularization and decoupled weight decay depends on the optimizer; they should
-not be treated as universally identical.
+Here $\eta$ (the Greek letter **eta**) is the **learning rate**. It controls the
+step size: a small $\eta$ changes the weights cautiously, while an excessively
+large $\eta$ can overshoot and make training unstable.
+
+Because the total gradient contains both data and regularization parts,
+
+$$
+\frac{\partial L}{\partial W}
+=dW_{data}+2\lambda W,
+$$
+
+one complete update can be rearranged as
+
+$$
+W \leftarrow W-\eta(dW_{data}+2\lambda W)
+=(1-2\eta\lambda)W-\eta dW_{data}.
+$$
+
+The factor $(1-2\eta\lambda)$ makes the existing weights slightly smaller at
+every step. For example, if $\eta=0.1$ and $\lambda=0.05$, this factor is
+$1-2(0.1)(0.05)=0.99$. Ignoring the data gradient for a moment, a weight of
+`2.0` becomes `1.98`. This repeated multiplicative shrinking explains the
+related term *weight decay*.
+
+The data-gradient term still moves weights in directions that improve the
+training predictions. L2 does not simply shrink every weight forever without
+opposition; training balances fitting the data against keeping weights small.
+The equivalence between L2 regularization and decoupled weight decay depends on
+the optimizer, so they should not be treated as universally identical.
 
 ## L1 regularization
 
@@ -89,7 +114,7 @@ of feature selection.
 
 | Property | L1 | L2 |
 |---|---|---|
-| Penalty | $\lambda\sum|W|$ | $\lambda\sum W^2$ |
+| Penalty | $\lambda\sum_{c,d}\lvert W_{c,d}\rvert$ | $\lambda\sum_{c,d}W_{c,d}^2$ |
 | Effect | Can set weights exactly to zero | Usually shrinks weights without making them exactly zero |
 | Typical structure | Sparse, relies on fewer features | Distributed, uses many small weights |
 | At zero | Not differentiable; use a subgradient | Smooth and differentiable |
