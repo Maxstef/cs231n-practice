@@ -21,7 +21,14 @@ they are not copies of Stanford lecture slides.
 - [Multiclass SVM loss](03-linear-classifiers/multiclass-svm-loss.md)
 - [Regularization](03-linear-classifiers/regularization.md)
 - [Softmax, cross-entropy, and log loss](03-linear-classifiers/softmax-cross-entropy-log-loss.md)
+- [Stable softmax cross-entropy from logits](03-linear-classifiers/stable-softmax-cross-entropy.md)
 - [Sigmoid, logistic, and softmax](03-linear-classifiers/sigmoid-logistic-softmax.md)
+
+### Optimization
+
+- [Gradient descent and stochastic gradient descent](04-optimization/gradient-descent-vs-sgd.md)
+- [SGD optimizers](04-optimization/sgd-optimizers.md)
+- [Hyperparameter tuning and learning rates](04-optimization/hyperparameter-tuning-and-learning-rates.md)
 
 ## Conventions
 
