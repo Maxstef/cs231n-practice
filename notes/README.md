@@ -30,6 +30,13 @@ they are not copies of Stanford lecture slides.
 - [SGD optimizers](04-optimization/sgd-optimizers.md)
 - [Hyperparameter tuning and learning rates](04-optimization/hyperparameter-tuning-and-learning-rates.md)
 
+### Neural networks and backpropagation
+
+- [Computational graphs](05-neural-networks/computational-graphs.md)
+- [Backpropagation with vectors and matrices](05-neural-networks/backpropagation.md)
+- [Activation functions](05-neural-networks/activation-functions.md)
+- [Two-layer neural networks](05-neural-networks/two-layer-neural-network.md)
+
 ## Conventions
 
 - Equations and diagrams should be recreated rather than copied from slides.

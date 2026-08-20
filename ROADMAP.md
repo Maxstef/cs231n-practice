@@ -16,18 +16,22 @@ can be explained and implemented—not merely that its lecture was watched.
 - [x] Understand the image-classification pipeline and train/validation/test
       splits.
 - [x] Implement k-nearest neighbors with held-out validation.
-- [ ] Derive and implement the multiclass SVM loss.
-- [ ] Derive and implement the softmax loss.
-- [ ] Derive analytic gradients and verify them numerically.
-- [ ] Train a linear classifier with stochastic gradient descent.
-- [ ] Use k-fold cross-validation to select linear-classifier hyperparameters.
+- [x] Derive and implement the multiclass SVM loss.
+- [x] Derive and implement the softmax loss.
+- [x] Derive analytic gradients and verify them numerically.
+- [x] Train a linear classifier with stochastic gradient descent.
+- [x] Use k-fold cross-validation to select linear-classifier hyperparameters.
 
 ## Phase 2: Optimization and neural networks
 
+- [x] Understand computational graphs, the chain rule, and gradient
+      accumulation.
+- [x] Implement reusable numerical gradient-checking utilities.
+- [x] Implement reusable affine, ReLU, affine-ReLU, and softmax-loss layers.
+- [x] Build and train a two-layer neural network.
+- [x] Train, tune, and evaluate the two-layer network on CIFAR-10.
 - [ ] Compare SGD, momentum, RMSProp, and Adam.
 - [ ] Explore learning-rate schedules and regularization.
-- [ ] Implement affine layers, activation functions, and backpropagation.
-- [ ] Build and train a two-layer neural network.
 - [ ] Generalize it into a fully connected network.
 - [ ] Add batch normalization and dropout.
 
