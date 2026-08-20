@@ -9,6 +9,7 @@ from cs231n_practice.layers import (
     affine_relu_forward,
     relu_backward,
     relu_forward,
+    softmax_loss,
 )
 
 
@@ -169,3 +170,23 @@ def test_relu_backward_rejects_shape_mismatch() -> None:
 
     with pytest.raises(ValueError, match="same shape"):
         relu_backward(np.ones((3, 2)), cache)
+
+
+def test_softmax_uniform_scores_have_log_c_loss_and_zero_row_sums() -> None:
+    scores = np.zeros((4, 3))
+    labels = np.array([0, 1, 2, 1])
+
+    loss, dscores = softmax_loss(scores, labels)
+
+    assert loss == pytest.approx(np.log(3))
+    np.testing.assert_allclose(dscores.sum(axis=1), 0.0, atol=1e-15)
+
+
+def test_softmax_is_stable_for_large_scores() -> None:
+    scores = np.array([[1_000.0, 0.0, -1_000.0]])
+
+    loss, dscores = softmax_loss(scores, np.array([2]))
+
+    assert loss == pytest.approx(2_000.0)
+    assert np.isfinite(loss)
+    assert np.all(np.isfinite(dscores))

@@ -156,3 +156,40 @@ def affine_relu_backward(
     affine_cache, relu_cache = cache
     dpre_activation = relu_backward(dout, relu_cache)
     return affine_backward(dpre_activation, affine_cache)
+
+
+def softmax_loss(
+    scores: np.ndarray,
+    labels: np.ndarray,
+) -> tuple[float, np.ndarray]:
+    """Return stable mean cross-entropy and its score gradient.
+
+    Args:
+        scores: Class scores with shape ``(N, C)``.
+        labels: Integer target indices with shape ``(N,)``.
+
+    Returns:
+        Mean data loss and ``dL/dscores`` with shape ``(N, C)``.
+    """
+    scores = _as_real_array(scores, name="scores")
+    labels = np.asarray(labels)
+    if scores.ndim != 2:
+        raise ValueError("scores must be two-dimensional")
+    if labels.ndim != 1 or labels.shape[0] != scores.shape[0]:
+        raise ValueError("labels must provide one target per score row")
+    if not np.issubdtype(labels.dtype, np.integer):
+        raise TypeError("labels must be integers")
+    if np.any((labels < 0) | (labels >= scores.shape[1])):
+        raise ValueError("labels must be valid class indices")
+
+    shifted = scores - scores.max(axis=1, keepdims=True)
+    exp_scores = np.exp(shifted)
+    sums = exp_scores.sum(axis=1, keepdims=True)
+    probabilities = exp_scores / sums
+    correct_shifted = shifted[np.arange(scores.shape[0]), labels]
+    loss = np.mean(np.log(sums[:, 0]) - correct_shifted)
+
+    dscores = probabilities.copy()
+    dscores[np.arange(scores.shape[0]), labels] -= 1.0
+    dscores /= scores.shape[0]
+    return float(loss), dscores

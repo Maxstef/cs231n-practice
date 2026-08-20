@@ -10,10 +10,12 @@ from cs231n_practice.classifiers.linear import (
     svm_loss_and_gradient,
     train_linear_classifier,
 )
+from cs231n_practice.classifiers.neural_net import TwoLayerNet
 
 __all__ = [
     "KNearestNeighbor",
     "TrainingResult",
+    "TwoLayerNet",
     "classification_accuracy",
     "linear_scores",
     "predict_linear",
