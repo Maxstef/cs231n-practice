@@ -8,6 +8,7 @@ and filter banks use ``(F, C, HH, WW)``.
 import numpy as np
 
 ConvCache = tuple[np.ndarray, np.ndarray, np.ndarray, int, int]
+MaxPoolCache = tuple[np.ndarray, int, int, int]
 
 
 def _as_real_array(value: np.ndarray, *, name: str) -> np.ndarray:
@@ -249,3 +250,172 @@ def conv_backward_naive(
             :, :, padding:-padding, padding:-padding
         ].copy()
     return dx, dweights, dbias
+
+
+def pooling_output_shape(
+    input_height: int,
+    input_width: int,
+    pool_height: int,
+    pool_width: int,
+    *,
+    stride: int,
+) -> tuple[int, int]:
+    """Return spatial output dimensions for exactly tiled pooling windows.
+
+    A stride larger than the pooling window is valid when the final window
+    still aligns with the input boundary. In that case, some input positions
+    lie in the gaps between windows and do not affect the output.
+    """
+    dimensions = {
+        "input_height": input_height,
+        "input_width": input_width,
+        "pool_height": pool_height,
+        "pool_width": pool_width,
+    }
+    for name, value in dimensions.items():
+        dimensions[name] = _validate_spatial_parameter(value, name=name, minimum=1)
+    stride = _validate_spatial_parameter(stride, name="stride", minimum=1)
+
+    height_travel = dimensions["input_height"] - dimensions["pool_height"]
+    width_travel = dimensions["input_width"] - dimensions["pool_width"]
+    if height_travel < 0 or width_travel < 0:
+        raise ValueError("pooling windows cannot be larger than the input")
+    if height_travel % stride != 0 or width_travel % stride != 0:
+        raise ValueError("pooling windows must tile the input exactly")
+
+    return 1 + height_travel // stride, 1 + width_travel // stride
+
+
+def max_pool_forward_naive(
+    x: np.ndarray,
+    *,
+    pool_height: int,
+    pool_width: int,
+    stride: int,
+) -> tuple[np.ndarray, MaxPoolCache]:
+    """Compute max pooling independently in each NCHW input channel.
+
+    Args:
+        x: Input with shape ``(N, C, H, W)``.
+        pool_height: Height of each spatial pooling window.
+        pool_width: Width of each spatial pooling window.
+        stride: Spatial step between neighboring windows.
+
+    Returns:
+        Output with shape ``(N, C, H_out, W_out)`` and a cache for
+        :func:`max_pool_backward_naive`.
+    """
+    x = _as_real_array(x, name="x")
+    if x.ndim != 4:
+        raise ValueError("x must be four-dimensional")
+    num_examples, num_channels, input_height, input_width = x.shape
+    output_height, output_width = pooling_output_shape(
+        input_height,
+        input_width,
+        pool_height,
+        pool_width,
+        stride=stride,
+    )
+    pool_height = int(pool_height)
+    pool_width = int(pool_width)
+    stride = int(stride)
+    calculation_dtype = np.result_type(x.dtype, np.float32)
+    x = x.astype(calculation_dtype, copy=False)
+    output = np.empty(
+        (num_examples, num_channels, output_height, output_width),
+        dtype=calculation_dtype,
+    )
+
+    for example_index in range(num_examples):
+        for channel_index in range(num_channels):
+            for output_row in range(output_height):
+                height_start = output_row * stride
+                height_end = height_start + pool_height
+                for output_col in range(output_width):
+                    width_start = output_col * stride
+                    width_end = width_start + pool_width
+                    window = x[
+                        example_index,
+                        channel_index,
+                        height_start:height_end,
+                        width_start:width_end,
+                    ]
+                    output[
+                        example_index, channel_index, output_row, output_col
+                    ] = np.max(window)
+
+    return output, (x, pool_height, pool_width, stride)
+
+
+def max_pool_backward_naive(
+    dout: np.ndarray,
+    cache: MaxPoolCache,
+) -> np.ndarray:
+    """Backpropagate through max pooling using a first-maximum tie rule.
+
+    ``np.argmax`` selects the first maximum in flattened row-major order. The
+    complete upstream gradient is routed to that position. Contributions use
+    accumulation because pooling windows may overlap.
+    """
+    if not isinstance(cache, tuple) or len(cache) != 4:
+        raise TypeError("cache must be the tuple returned by max_pool_forward_naive")
+    x = _as_real_array(cache[0], name="cached x")
+    pool_height = _validate_spatial_parameter(
+        cache[1], name="cached pool_height", minimum=1
+    )
+    pool_width = _validate_spatial_parameter(
+        cache[2], name="cached pool_width", minimum=1
+    )
+    stride = _validate_spatial_parameter(cache[3], name="cached stride", minimum=1)
+    dout = _as_real_array(dout, name="dout")
+
+    num_examples, num_channels, input_height, input_width = x.shape
+    output_height, output_width = pooling_output_shape(
+        input_height,
+        input_width,
+        pool_height,
+        pool_width,
+        stride=stride,
+    )
+    expected_dout_shape = (
+        num_examples,
+        num_channels,
+        output_height,
+        output_width,
+    )
+    if dout.shape != expected_dout_shape:
+        raise ValueError(f"dout must have shape {expected_dout_shape}")
+
+    gradient_dtype = np.result_type(x.dtype, dout.dtype, np.float32)
+    x = x.astype(gradient_dtype, copy=False)
+    dout = dout.astype(gradient_dtype, copy=False)
+    dx = np.zeros_like(x, dtype=gradient_dtype)
+
+    for example_index in range(num_examples):
+        for channel_index in range(num_channels):
+            for output_row in range(output_height):
+                height_start = output_row * stride
+                height_end = height_start + pool_height
+                for output_col in range(output_width):
+                    width_start = output_col * stride
+                    width_end = width_start + pool_width
+                    window = x[
+                        example_index,
+                        channel_index,
+                        height_start:height_end,
+                        width_start:width_end,
+                    ]
+                    flat_index = int(np.argmax(window))
+                    local_row, local_col = np.unravel_index(
+                        flat_index, window.shape
+                    )
+                    dx[
+                        example_index,
+                        channel_index,
+                        height_start + local_row,
+                        width_start + local_col,
+                    ] += dout[
+                        example_index, channel_index, output_row, output_col
+                    ]
+
+    return dx
