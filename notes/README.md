@@ -37,6 +37,12 @@ they are not copies of Stanford lecture slides.
 - [Activation functions](05-neural-networks/activation-functions.md)
 - [Two-layer neural networks](05-neural-networks/two-layer-neural-network.md)
 
+### Convolutional neural networks
+
+- [Convolution layers](06-convolutional-networks/convolution-layers.md)
+- [Pooling and spatial downsampling](06-convolutional-networks/pooling-and-downsampling.md)
+- [Receptive fields and small CNNs](06-convolutional-networks/receptive-fields-and-small-cnns.md)
+
 ## Conventions
 
 - Equations and diagrams should be recreated rather than copied from slides.

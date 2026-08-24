@@ -37,9 +37,9 @@ can be explained and implemented—not merely that its lecture was watched.
 
 ## Phase 3: Convolutional networks
 
-- [ ] Derive convolution and pooling output shapes.
-- [ ] Implement naive convolution and pooling forward/backward passes.
-- [ ] Build a small convolutional network.
+- [x] Derive convolution and pooling output shapes.
+- [x] Implement naive convolution and pooling forward/backward passes.
+- [x] Build and gradient-check a small convolutional network.
 - [ ] Study AlexNet, VGG, and ResNet design choices.
 - [ ] Use transfer learning and compare it with training from scratch.
 
