@@ -36,6 +36,8 @@ they are not copies of Stanford lecture slides.
 - [Backpropagation with vectors and matrices](05-neural-networks/backpropagation.md)
 - [Activation functions](05-neural-networks/activation-functions.md)
 - [Two-layer neural networks](05-neural-networks/two-layer-neural-network.md)
+- [Normalization layers](05-neural-networks/normalization.md)
+- [Dropout](05-neural-networks/dropout.md)
 
 ### Convolutional neural networks
 
