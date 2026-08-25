@@ -13,11 +13,15 @@ from cs231n_practice.cnn_layers import (
 from cs231n_practice.layers import (
     affine_backward,
     affine_forward,
-    affine_relu_backward,
-    affine_relu_forward,
     relu_backward,
     relu_forward,
     softmax_loss,
+)
+from cs231n_practice.normalization import (
+    batchnorm_backward,
+    batchnorm_forward,
+    dropout_backward,
+    dropout_forward,
 )
 from cs231n_practice.training import sample_minibatch
 
@@ -46,13 +50,28 @@ def _nonnegative_float(value: float, *, name: str) -> float:
     return value
 
 
+def _dropout_probability(value: float | None) -> float | None:
+    """Return a valid dropout keep probability, or ``None`` to disable it."""
+    if value is None:
+        return None
+    if isinstance(value, (bool, np.bool_)) or not isinstance(
+        value, (int, float, np.number)
+    ):
+        raise TypeError("dropout_keep_probability must be numeric or None")
+    value = float(value)
+    if not np.isfinite(value) or not 0.0 < value <= 1.0:
+        raise ValueError("dropout_keep_probability must be in (0, 1]")
+    return value
+
+
 class SmallConvNet:
-    """A conv-ReLU-pool-affine-ReLU-affine classifier.
+    """A small CNN with optional hidden batch normalization and dropout.
 
     The convolution uses stride 1 and same-size padding. Max pooling uses a
-    ``2x2`` window with stride 2. The naive convolution and pooling layers make
-    this model suitable for small educational experiments rather than
-    large-scale training.
+    ``2x2`` window with stride 2. When enabled, batch normalization is applied
+    after the hidden affine layer and before ReLU; inverted dropout follows
+    ReLU. The naive convolution and pooling layers make this model suitable for
+    small educational experiments rather than large-scale training.
     """
 
     def __init__(
@@ -63,6 +82,8 @@ class SmallConvNet:
         hidden_dim: int,
         num_classes: int,
         *,
+        use_batchnorm: bool = False,
+        dropout_keep_probability: float | None = None,
         seed: int | None = None,
     ) -> None:
         if not isinstance(input_shape, tuple) or len(input_shape) != 3:
@@ -77,9 +98,19 @@ class SmallConvNet:
         num_classes = _positive_integer(num_classes, name="num_classes")
         if filter_size % 2 == 0:
             raise ValueError("filter_size must be odd for same-size padding")
+        if not isinstance(use_batchnorm, (bool, np.bool_)):
+            raise TypeError("use_batchnorm must be Boolean")
 
         self.input_shape = (input_channels, input_height, input_width)
         self.padding = (filter_size - 1) // 2
+        self.use_batchnorm = bool(use_batchnorm)
+        self.dropout_keep_probability = _dropout_probability(
+            dropout_keep_probability
+        )
+        self.batchnorm_state: dict[str, object] | None = (
+            {"mode": "train"} if self.use_batchnorm else None
+        )
+        self.dropout_generator = np.random.default_rng(seed)
         conv_height, conv_width = convolution_output_shape(
             input_height,
             input_width,
@@ -120,6 +151,9 @@ class SmallConvNet:
             ),
             "b3": np.zeros(num_classes),
         }
+        if self.use_batchnorm:
+            self.parameters["gamma2"] = np.ones(hidden_dim)
+            self.parameters["beta2"] = np.zeros(hidden_dim)
 
     def loss(
         self,
@@ -155,9 +189,30 @@ class SmallConvNet:
             stride=2,
         )
         flat = pooled.reshape(features.shape[0], -1)
-        hidden, hidden_cache = affine_relu_forward(
+        hidden_linear, hidden_affine_cache = affine_forward(
             flat, self.parameters["W2"], self.parameters["b2"]
         )
+        batchnorm_cache = None
+        mode = "train" if labels is not None else "test"
+        if self.use_batchnorm:
+            if self.batchnorm_state is None:
+                raise RuntimeError("batch-normalization state is unavailable")
+            self.batchnorm_state["mode"] = mode
+            hidden_linear, batchnorm_cache = batchnorm_forward(
+                hidden_linear,
+                self.parameters["gamma2"],
+                self.parameters["beta2"],
+                self.batchnorm_state,
+            )
+        hidden, hidden_relu_cache = relu_forward(hidden_linear)
+        dropout_cache = None
+        if self.dropout_keep_probability is not None:
+            hidden, dropout_cache = dropout_forward(
+                hidden,
+                keep_probability=self.dropout_keep_probability,
+                mode=mode,
+                generator=self.dropout_generator,
+            )
         scores, scores_cache = affine_forward(
             hidden, self.parameters["W3"], self.parameters["b3"]
         )
@@ -171,7 +226,18 @@ class SmallConvNet:
         loss = data_loss + regularization_strength * weight_penalty
 
         dhidden, dW3, db3 = affine_backward(dscores, scores_cache)
-        dflat, dW2, db2 = affine_relu_backward(dhidden, hidden_cache)
+        if dropout_cache is not None:
+            dhidden = dropout_backward(dhidden, dropout_cache)
+        dhidden_linear = relu_backward(dhidden, hidden_relu_cache)
+        batchnorm_gradients = {}
+        if batchnorm_cache is not None:
+            dhidden_linear, dgamma2, dbeta2 = batchnorm_backward(
+                dhidden_linear, batchnorm_cache
+            )
+            batchnorm_gradients = {"gamma2": dgamma2, "beta2": dbeta2}
+        dflat, dW2, db2 = affine_backward(
+            dhidden_linear, hidden_affine_cache
+        )
         dpooled = dflat.reshape(pooled.shape)
         dactivated = max_pool_backward_naive(dpooled, pool_cache)
         dconv = relu_backward(dactivated, relu_cache)
@@ -187,6 +253,7 @@ class SmallConvNet:
             "b2": db2,
             "W3": dW3,
             "b3": db3,
+            **batchnorm_gradients,
         }
         return float(loss), gradients
 
