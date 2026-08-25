@@ -39,9 +39,7 @@ spatial dimension when the input is compatible.
 Max pooling preserves the strongest activation in each window:
 
 $$
-Y_{n,c,i,j}
-=
-\max_{u,v}X_{n,c,iS+u,jS+v}.
+Y_{n,c,i,j}=\max_{u,v}X_{n,c,iS+u,jS+v}.
 $$
 
 It discards the other values and their precise arrangement. This can make a feature

@@ -8,7 +8,7 @@ and encourages information to be represented through multiple paths.
 Let $p$ be the probability of **keeping** an activation, and sample
 
 $$
-M_i\sim\operatorname{Bernoulli}(p).
+M_i\sim\mathrm{Bernoulli}(p).
 $$
 
 ## Inverted dropout
@@ -94,4 +94,3 @@ useful depends on the architecture and experiment.
 
 - Stanford CS231n Spring 2025 lecture material on regularization, available from
   the [course schedule](https://cs231n.stanford.edu/2025/schedule.html).
-

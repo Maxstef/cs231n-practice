@@ -4,9 +4,7 @@ An activation function applies a nonlinear transformation between learned affine
 layers. Without it, stacking layers does not make the model more expressive:
 
 $$
-W_2(W_1x+b_1)+b_2
-=
-(W_2W_1)x+(W_2b_1+b_2),
+W_2(W_1x+b_1)+b_2=(W_2W_1)x+(W_2b_1+b_2),
 $$
 
 which is still one affine transformation.
@@ -20,13 +18,13 @@ linearly separable become easier for the final linear layer to separate.
 The rectified linear unit is
 
 $$
-\operatorname{ReLU}(x)=\max(0,x).
+\mathrm{ReLU}(x)=\max(0,x).
 $$
 
 Its derivative is
 
 $$
-\operatorname{ReLU}'(x)=
+\mathrm{ReLU}'(x)=
 \begin{cases}
 1, & x>0,\\
 0, & x<0.
@@ -54,7 +52,7 @@ stop the entire model; it only blocks that unit's gradient on that example.
 Leaky ReLU retains a small slope $\alpha$ on the negative side:
 
 $$
-\operatorname{LeakyReLU}(x)=\max(\alpha x,x),
+\mathrm{LeakyReLU}(x)=\max(\alpha x,x),
 \qquad 0<\alpha\ll1.
 $$
 
@@ -99,7 +97,7 @@ magnitude and can therefore produce small gradients.
 The exponential linear unit is
 
 $$
-\operatorname{ELU}(x)=
+\mathrm{ELU}(x)=
 \begin{cases}
 x, & x>0,\\
 \alpha(e^x-1), & x\leq0.
@@ -114,7 +112,7 @@ saturates, and computing an exponential is more expensive than ReLU.
 The Gaussian error linear unit is
 
 $$
-\operatorname{GELU}(x)=x\Phi(x),
+\mathrm{GELU}(x)=x\Phi(x),
 $$
 
 where $\Phi$ is the standard normal cumulative distribution function. It behaves
@@ -126,7 +124,7 @@ Transformer architectures.
 The sigmoid linear unit is
 
 $$
-\operatorname{SiLU}(x)=x\sigma(x).
+\mathrm{SiLU}(x)=x\sigma(x).
 $$
 
 It is smooth, allows small negative outputs, and is used in several modern vision

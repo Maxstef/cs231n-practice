@@ -49,10 +49,7 @@ $$
 One response is
 
 $$
-Y_{n,f,i,j}
-=
-\sum_{c,u,v}
-X_{pad}[n,c,h_{start}+u,w_{start}+v]W_f[f,c,u,v]+b_f.
+Y_{n,f,i,j}=\sum_{c,u,v}X_{pad}[n,c,h_{start}+u,w_{start}+v]W_f[f,c,u,v]+b_f.
 $$
 
 Here $c$ indexes channels, while $u,v$ index rows and columns inside the filter.
@@ -72,15 +69,11 @@ cross-correlation. Learned filters make either convention equally expressive.
 With padding $P$ and stride $S$,
 
 $$
-H_{out}
-=
-1+\left\lfloor\frac{H+2P-HH}{S}\right\rfloor,
+H_{out}=1+\left\lfloor\frac{H+2P-HH}{S}\right\rfloor,
 $$
 
 $$
-W_{out}
-=
-1+\left\lfloor\frac{W+2P-WW}{S}\right\rfloor.
+W_{out}=1+\left\lfloor\frac{W+2P-WW}{S}\right\rfloor.
 $$
 
 The project implementation requires exact tiling, so the travel distances must be

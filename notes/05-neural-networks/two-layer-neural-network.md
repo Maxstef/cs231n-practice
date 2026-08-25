@@ -13,7 +13,7 @@ Z_1=XW_1+b_1,
 $$
 
 $$
-H=\operatorname{ReLU}(Z_1),
+H=\mathrm{ReLU}(Z_1),
 $$
 
 $$
