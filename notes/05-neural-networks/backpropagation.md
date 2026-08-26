@@ -20,6 +20,146 @@ variable has the same shape as that variable:
 Each entry answers: “If I slightly change this entry while keeping the others
 fixed, how does the loss change?”
 
+## What do `dout` and `dx` mean?
+
+Suppose one layer computes
+
+$$
+out=f(x),
+$$
+
+and the complete network eventually produces scalar loss $L$. The layer's
+backward function receives
+
+$$
+dout=\frac{\partial L}{\partial out}.
+$$
+
+`dout` is the **upstream gradient**: it tells the layer how sensitive the loss
+is to every entry of that layer's output. Consequently, it always has the same
+shape as `out`:
+
+```text
+dout.shape == out.shape
+```
+
+The layer combines `dout` with its local derivative and returns
+
+$$
+dx=\frac{\partial L}{\partial x}.
+$$
+
+`dx` tells us how sensitive the loss is to every entry of this layer's input,
+so it has the same shape as `x`:
+
+```text
+dx.shape == x.shape
+```
+
+Therefore, `dout` is **not necessarily the gradient with respect to the model's
+original input**. It is the gradient with respect to the output of whichever
+operation is currently performing its backward pass.
+
+### The names are relative to a layer
+
+Consider two adjacent layers:
+
+```text
+x -- Layer A --> hidden -- Layer B --> out
+```
+
+Backward propagation moves in the opposite direction:
+
+```text
+dout -- Layer B backward --> dhidden -- Layer A backward --> dx
+```
+
+The intermediate gradient
+
+$$
+dhidden=\frac{\partial L}{\partial hidden}
+$$
+
+has two names depending on which layer we are discussing:
+
+- it is the `dx` returned by Layer B, because `hidden` is Layer B's input;
+- it is the `dout` received by Layer A, because `hidden` is Layer A's output.
+
+Thus, one layer's `dx` becomes the preceding layer's `dout`. The underlying
+gradient has not changed; only its role relative to the current layer has.
+
+### Shape example: an affine layer
+
+For
+
+$$
+out=xW+b,
+$$
+
+with
+
+```text
+x:     (N, D)
+W:     (D, M)
+b:     (M,)
+out:   (N, M)
+dout:  (N, M)
+```
+
+the backward formulas produce
+
+```text
+dx = dout @ W.T       -> (N, D)
+dW = x.T @ dout       -> (D, M)
+db = dout.sum(axis=0) -> (M,)
+```
+
+Each returned gradient has the same shape as the forward value with respect to
+which it was differentiated.
+
+### Why does a backward function need `dout`?
+
+The local derivative of $f$ only describes how `out` changes when `x` changes.
+Training needs to know how the final loss changes. The chain rule combines both:
+
+$$
+\frac{\partial L}{\partial x}
+=
+\frac{\partial L}{\partial out}
+\frac{\partial out}{\partial x}.
+$$
+
+The first factor is the incoming `dout`; the layer computes the appropriate
+product with its local derivative to obtain `dx`. For tensor-valued functions,
+this is conceptually a Jacobian product even though implementations avoid
+constructing the full Jacobian.
+
+### Branches accumulate input gradients
+
+For a residual block
+
+$$
+out=F(x)+x,
+$$
+
+the same `dout` enters both paths. The shortcut contributes `dout` directly,
+while the learned branch contributes the gradient obtained by backpropagating
+through $F$:
+
+$$
+dx=dx_{branch}+dout.
+$$
+
+The result still has the shape of `x`. Addition is required because the same
+input affects the loss through two separate computational paths.
+
+### Memory rule
+
+```text
+dout: gradient arriving at a layer, shaped like its output
+dx:   gradient leaving the layer backward, shaped like its input
+```
+
 ## Jacobians and reverse-mode products
 
 Suppose a function maps $x\in\mathbb{R}^D$ to $z\in\mathbb{R}^M$. Its complete

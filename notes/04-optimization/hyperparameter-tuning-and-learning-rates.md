@@ -32,6 +32,34 @@ and $0.003$ when the correct order of magnitude is unknown. Random search is
 often useful when several hyperparameters are being varied because it explores
 more distinct values of each one than a small grid.
 
+### Random search versus grid search
+
+A grid evaluates every combination of a fixed list of values. This is easy to
+reproduce and visualize, but it spends the same number of trials on every
+dimension. If only one of two hyperparameters strongly affects performance, a
+$k \times k$ grid tests only $k$ distinct values of the important parameter,
+despite costing $k^2$ runs.
+
+Random search samples combinations independently. With the same $k^2$-run
+budget, it can test up to $k^2$ distinct values along the important dimension.
+It is therefore a strong default when the important hyperparameters are not
+known in advance.
+
+Sample positive scale parameters log-uniformly. For example, sample
+$u \sim \mathrm{Uniform}(-5,-2)$ and set
+
+$$
+\alpha = 10^u
+$$
+
+to explore learning rates between $10^{-5}$ and $10^{-2}$ without concentrating
+most samples near the upper end. After a broad search, narrow the promising
+range and search again.
+
+Grid search can still be useful for a very small number of discrete choices or
+for a local, interpretable sweep. Neither method compensates for an unfair
+validation protocol or too little training per trial.
+
 For a fair comparison, keep the data split and training budget fixed. Record
 the random seed and consider repeated runs when noise could change the ranking.
 Cross-validation provides a more stable estimate on small datasets, at greater
@@ -107,3 +135,7 @@ starting at $t=1$ or adding an offset.
 
 The model-selection workflow is practiced in
 [`11_linear_classifier_model_selection.ipynb`](../../notebooks/11_linear_classifier_model_selection.ipynb).
+
+## Further reading
+
+- [Random Search for Hyper-Parameter Optimization](https://www.jmlr.org/papers/v13/bergstra12a.html)

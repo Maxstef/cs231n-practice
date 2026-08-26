@@ -29,6 +29,7 @@ they are not copies of Stanford lecture slides.
 - [Gradient descent and stochastic gradient descent](04-optimization/gradient-descent-vs-sgd.md)
 - [SGD optimizers](04-optimization/sgd-optimizers.md)
 - [Hyperparameter tuning and learning rates](04-optimization/hyperparameter-tuning-and-learning-rates.md)
+- [Reading training and validation curves](04-optimization/reading-learning-curves.md)
 
 ### Neural networks and backpropagation
 
@@ -36,6 +37,7 @@ they are not copies of Stanford lecture slides.
 - [Backpropagation with vectors and matrices](05-neural-networks/backpropagation.md)
 - [Activation functions](05-neural-networks/activation-functions.md)
 - [Two-layer neural networks](05-neural-networks/two-layer-neural-network.md)
+- [Weight initialization](05-neural-networks/weight-initialization.md)
 - [Normalization layers](05-neural-networks/normalization.md)
 - [Dropout](05-neural-networks/dropout.md)
 
@@ -44,6 +46,10 @@ they are not copies of Stanford lecture slides.
 - [Convolution layers](06-convolutional-networks/convolution-layers.md)
 - [Pooling and spatial downsampling](06-convolutional-networks/pooling-and-downsampling.md)
 - [Receptive fields and small CNNs](06-convolutional-networks/receptive-fields-and-small-cnns.md)
+- [From early CNNs to deeper architectures](06-convolutional-networks/cnn-architectures.md)
+- [Residual connections](06-convolutional-networks/residual-connections.md)
+- [Image data augmentation](06-convolutional-networks/data-augmentation.md)
+- [Transfer learning with CNNs](06-convolutional-networks/transfer-learning.md)
 
 ## Conventions
 
