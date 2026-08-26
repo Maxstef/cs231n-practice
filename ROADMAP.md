@@ -33,14 +33,15 @@ can be explained and implemented—not merely that its lecture was watched.
 - [ ] Compare SGD, momentum, RMSProp, and Adam.
 - [ ] Explore learning-rate schedules and regularization.
 - [ ] Generalize it into a fully connected network.
-- [ ] Add batch normalization and dropout.
+- [x] Add batch normalization and dropout.
 
 ## Phase 3: Convolutional networks
 
 - [x] Derive convolution and pooling output shapes.
 - [x] Implement naive convolution and pooling forward/backward passes.
 - [x] Build and gradient-check a small convolutional network.
-- [ ] Study AlexNet, VGG, and ResNet design choices.
+- [x] Study AlexNet, VGG, and ResNet design choices.
+- [x] Implement and gradient-check a reusable affine residual block.
 - [ ] Use transfer learning and compare it with training from scratch.
 
 ## Phase 4: Sequences, attention, and transformers
