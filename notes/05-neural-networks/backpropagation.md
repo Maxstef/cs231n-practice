@@ -123,10 +123,7 @@ The local derivative of $f$ only describes how `out` changes when `x` changes.
 Training needs to know how the final loss changes. The chain rule combines both:
 
 $$
-\frac{\partial L}{\partial x}
-=
-\frac{\partial L}{\partial out}
-\frac{\partial out}{\partial x}.
+\frac{\partial L}{\partial x}=\frac{\partial L}{\partial out}xw\frac{\partial out}{\partial x}.
 $$
 
 The first factor is the incoming `dout`; the layer computes the appropriate
