@@ -1,9 +1,13 @@
 import numpy as np
 import pytest
 
+from cs231n_practice.gradient_check import eval_numerical_gradient_array
 from cs231n_practice.rnn_layers import (
+    rnn_backward,
+    rnn_backward_masked,
     rnn_forward,
     rnn_forward_masked,
+    rnn_step_backward,
     rnn_step_forward,
 )
 
@@ -25,6 +29,30 @@ def test_rnn_step_forward_matches_direct_calculation() -> None:
     np.testing.assert_allclose(h_next, expected)
     assert h_next.shape == h_previous.shape
     assert len(cache) == 5
+
+
+def test_rnn_step_backward_matches_numerical_gradients() -> None:
+    generator = np.random.default_rng(29)
+    x_t = generator.normal(size=(2, 3))
+    h_previous = generator.normal(size=(2, 4))
+    weights_x = generator.normal(scale=0.2, size=(3, 4))
+    weights_h = generator.normal(scale=0.2, size=(4, 4))
+    bias = generator.normal(scale=0.1, size=4)
+    dh_next = generator.normal(size=(2, 4))
+    _, cache = rnn_step_forward(
+        x_t, h_previous, weights_x, weights_h, bias
+    )
+
+    analytical = rnn_step_backward(dh_next, cache)
+    arguments = [x_t, h_previous, weights_x, weights_h, bias]
+    for index, (value, gradient) in enumerate(zip(arguments, analytical)):
+        def forward(candidate: np.ndarray) -> np.ndarray:
+            current = arguments.copy()
+            current[index] = candidate
+            return rnn_step_forward(*current)[0]
+
+        numerical = eval_numerical_gradient_array(forward, value, dh_next)
+        np.testing.assert_allclose(gradient, numerical, rtol=1e-7, atol=1e-8)
 
 
 def test_rnn_forward_matches_manual_unrolling_and_caches_every_step() -> None:
@@ -53,6 +81,28 @@ def test_rnn_forward_matches_manual_unrolling_and_caches_every_step() -> None:
     np.testing.assert_allclose(hidden_states, expected)
     assert hidden_states.shape == (2, 4, 5)
     assert len(caches) == x.shape[1]
+
+
+def test_rnn_backward_matches_numerical_gradients() -> None:
+    generator = np.random.default_rng(31)
+    x = generator.normal(size=(2, 3, 2))
+    h0 = generator.normal(size=(2, 3))
+    weights_x = generator.normal(scale=0.2, size=(2, 3))
+    weights_h = generator.normal(scale=0.2, size=(3, 3))
+    bias = generator.normal(scale=0.1, size=3)
+    dh = generator.normal(size=(2, 3, 3))
+    _, caches = rnn_forward(x, h0, weights_x, weights_h, bias)
+
+    analytical = rnn_backward(dh, caches)
+    arguments = [x, h0, weights_x, weights_h, bias]
+    for index, (value, gradient) in enumerate(zip(arguments, analytical)):
+        def forward(candidate: np.ndarray) -> np.ndarray:
+            current = arguments.copy()
+            current[index] = candidate
+            return rnn_forward(*current)[0]
+
+        numerical = eval_numerical_gradient_array(forward, value, dh)
+        np.testing.assert_allclose(gradient, numerical, rtol=1e-7, atol=1e-8)
 
 
 def test_rnn_forward_does_not_mutate_inputs_or_parameters() -> None:
@@ -107,6 +157,33 @@ def test_rnn_forward_masked_preserves_state_after_each_sequence_ends() -> None:
     np.testing.assert_allclose(hidden_states[2:3], unmasked)
     assert len(caches) == x.shape[1]
     assert all(mask.shape == (3, 1) for _, mask in caches)
+
+
+def test_rnn_backward_masked_matches_numerical_gradients() -> None:
+    generator = np.random.default_rng(37)
+    x = generator.normal(size=(2, 3, 2))
+    h0 = generator.normal(size=(2, 3))
+    lengths = np.array([1, 3])
+    weights_x = generator.normal(scale=0.2, size=(2, 3))
+    weights_h = generator.normal(scale=0.2, size=(3, 3))
+    bias = generator.normal(scale=0.1, size=3)
+    dh = generator.normal(size=(2, 3, 3))
+    _, caches = rnn_forward_masked(
+        x, h0, lengths, weights_x, weights_h, bias
+    )
+
+    analytical = rnn_backward_masked(dh, caches)
+    arguments = [x, h0, weights_x, weights_h, bias]
+    for index, (value, gradient) in enumerate(zip(arguments, analytical)):
+        def forward(candidate: np.ndarray) -> np.ndarray:
+            current = arguments.copy()
+            current[index] = candidate
+            return rnn_forward_masked(
+                current[0], current[1], lengths, current[2], current[3], current[4]
+            )[0]
+
+        numerical = eval_numerical_gradient_array(forward, value, dh)
+        np.testing.assert_allclose(gradient, numerical, rtol=1e-7, atol=1e-8)
 
 
 @pytest.mark.parametrize(
