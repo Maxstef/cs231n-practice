@@ -17,6 +17,30 @@ RnnStepCache = tuple[
 RnnCache = list[RnnStepCache]
 MaskedRnnStepCache = tuple[RnnStepCache, np.ndarray]
 MaskedRnnCache = list[MaskedRnnStepCache]
+LstmStepCache = tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]
+LstmCache = list[LstmStepCache]
+GruStepCache = tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]
 
 
 def _as_real_array(value: np.ndarray, *, name: str) -> np.ndarray:
@@ -31,6 +55,16 @@ def _as_real_array(value: np.ndarray, *, name: str) -> np.ndarray:
     if not np.all(np.isfinite(array)):
         raise ValueError(f"{name} must contain finite values")
     return array
+
+
+def _sigmoid(x: np.ndarray) -> np.ndarray:
+    """Compute sigmoid without overflowing for large-magnitude inputs."""
+    output = np.empty_like(x, dtype=np.result_type(x.dtype, np.float32))
+    positive = x >= 0
+    output[positive] = 1.0 / (1.0 + np.exp(-x[positive]))
+    exp_x = np.exp(x[~positive])
+    output[~positive] = exp_x / (1.0 + exp_x)
+    return output
 
 
 def rnn_step_forward(
@@ -425,3 +459,256 @@ def rnn_backward_masked(
         dbias += dbias_t
 
     return dx, dh_carry, dweights_x, dweights_h, dbias
+
+
+def lstm_step_forward(
+    x_t: np.ndarray,
+    h_previous: np.ndarray,
+    c_previous: np.ndarray,
+    weights_x: np.ndarray,
+    weights_h: np.ndarray,
+    bias: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, LstmStepCache]:
+    """Compute one LSTM step using packed input, forget, output, candidate gates."""
+    x_t = _as_real_array(x_t, name="x_t")
+    h_previous = _as_real_array(h_previous, name="h_previous")
+    c_previous = _as_real_array(c_previous, name="c_previous")
+    weights_x = _as_real_array(weights_x, name="weights_x")
+    weights_h = _as_real_array(weights_h, name="weights_h")
+    bias = _as_real_array(bias, name="bias")
+    if x_t.ndim != 2 or h_previous.ndim != 2 or c_previous.ndim != 2:
+        raise ValueError("x_t, h_previous, and c_previous must be two-dimensional")
+    num_examples, input_dim = x_t.shape
+    hidden_dim = h_previous.shape[1]
+    if h_previous.shape != c_previous.shape or h_previous.shape[0] != num_examples:
+        raise ValueError("hidden and cell states must have matching (N, H) shapes")
+    if weights_x.shape != (input_dim, 4 * hidden_dim):
+        raise ValueError("weights_x must have shape (D, 4H)")
+    if weights_h.shape != (hidden_dim, 4 * hidden_dim):
+        raise ValueError("weights_h must have shape (H, 4H)")
+    if bias.shape != (4 * hidden_dim,):
+        raise ValueError("bias must have shape (4H,)")
+
+    dtype = np.result_type(
+        x_t.dtype, h_previous.dtype, c_previous.dtype,
+        weights_x.dtype, weights_h.dtype, bias.dtype, np.float32,
+    )
+    x_t = x_t.astype(dtype, copy=False)
+    h_previous = h_previous.astype(dtype, copy=False)
+    c_previous = c_previous.astype(dtype, copy=False)
+    weights_x = weights_x.astype(dtype, copy=False)
+    weights_h = weights_h.astype(dtype, copy=False)
+    bias = bias.astype(dtype, copy=False)
+    activation = x_t @ weights_x + h_previous @ weights_h + bias
+    activation_i, activation_f, activation_o, activation_g = np.split(
+        activation, 4, axis=1
+    )
+    input_gate = _sigmoid(activation_i)
+    forget_gate = _sigmoid(activation_f)
+    output_gate = _sigmoid(activation_o)
+    candidate = np.tanh(activation_g)
+    c_next = forget_gate * c_previous + input_gate * candidate
+    h_next = output_gate * np.tanh(c_next)
+    cache = (
+        x_t, h_previous, c_previous, weights_x, weights_h,
+        input_gate, forget_gate, output_gate, candidate, c_next,
+    )
+    return h_next, c_next, cache
+
+
+def lstm_step_backward(
+    dh_next: np.ndarray,
+    dc_next: np.ndarray,
+    cache: LstmStepCache,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Backpropagate hidden- and cell-state gradients through one LSTM step."""
+    if not isinstance(cache, tuple) or len(cache) != 10:
+        raise TypeError("cache must be the tuple returned by lstm_step_forward")
+    (
+        x_t, h_previous, c_previous, weights_x, weights_h,
+        input_gate, forget_gate, output_gate, candidate, c_next,
+    ) = cache
+    dh_next = _as_real_array(dh_next, name="dh_next")
+    dc_next = _as_real_array(dc_next, name="dc_next")
+    if dh_next.shape != h_previous.shape or dc_next.shape != c_previous.shape:
+        raise ValueError("upstream gradients must match the hidden and cell states")
+
+    tanh_c_next = np.tanh(c_next)
+    doutput_gate = dh_next * tanh_c_next
+    dc_total = dc_next + dh_next * output_gate * (1.0 - tanh_c_next**2)
+    dc_previous = dc_total * forget_gate
+    dforget_gate = dc_total * c_previous
+    dinput_gate = dc_total * candidate
+    dcandidate = dc_total * input_gate
+    dactivation = np.concatenate(
+        (
+            dinput_gate * input_gate * (1.0 - input_gate),
+            dforget_gate * forget_gate * (1.0 - forget_gate),
+            doutput_gate * output_gate * (1.0 - output_gate),
+            dcandidate * (1.0 - candidate**2),
+        ),
+        axis=1,
+    )
+    dx_t = dactivation @ weights_x.T
+    dh_previous = dactivation @ weights_h.T
+    dweights_x = x_t.T @ dactivation
+    dweights_h = h_previous.T @ dactivation
+    dbias = dactivation.sum(axis=0)
+    return dx_t, dh_previous, dc_previous, dweights_x, dweights_h, dbias
+
+
+def lstm_forward(
+    x: np.ndarray,
+    h0: np.ndarray,
+    weights_x: np.ndarray,
+    weights_h: np.ndarray,
+    bias: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, LstmCache]:
+    """Run an LSTM forward over a sequence, initializing the cell state to zero."""
+    x = _as_real_array(x, name="x")
+    h0 = _as_real_array(h0, name="h0")
+    if x.ndim != 3 or h0.ndim != 2:
+        raise ValueError("x and h0 must have shapes (N, T, D) and (N, H)")
+    if x.shape[0] != h0.shape[0]:
+        raise ValueError("x and h0 must have equal batch sizes")
+    num_examples, num_steps, _ = x.shape
+    hidden_dim = h0.shape[1]
+    dtype = np.result_type(
+        x.dtype, h0.dtype, np.asarray(weights_x).dtype,
+        np.asarray(weights_h).dtype, np.asarray(bias).dtype, np.float32,
+    )
+    hidden_states = np.empty((num_examples, num_steps, hidden_dim), dtype=dtype)
+    cell_states = np.empty((num_examples, num_steps, hidden_dim), dtype=dtype)
+    caches: LstmCache = []
+    h_previous = h0
+    c_previous = np.zeros_like(h0, dtype=dtype)
+    for time_index in range(num_steps):
+        h_previous, c_previous, cache = lstm_step_forward(
+            x[:, time_index, :], h_previous, c_previous,
+            weights_x, weights_h, bias,
+        )
+        hidden_states[:, time_index, :] = h_previous
+        cell_states[:, time_index, :] = c_previous
+        caches.append(cache)
+    return hidden_states, cell_states, caches
+
+
+def gru_step_forward(
+    x_t: np.ndarray,
+    h_previous: np.ndarray,
+    weights_x_gates: np.ndarray,
+    weights_h_gates: np.ndarray,
+    bias_gates: np.ndarray,
+    weights_x_candidate: np.ndarray,
+    weights_h_candidate: np.ndarray,
+    bias_candidate: np.ndarray,
+) -> tuple[np.ndarray, GruStepCache]:
+    """Compute one GRU step using packed update and reset gates."""
+    arrays = [
+        _as_real_array(value, name=name)
+        for value, name in (
+            (x_t, "x_t"), (h_previous, "h_previous"),
+            (weights_x_gates, "weights_x_gates"),
+            (weights_h_gates, "weights_h_gates"),
+            (bias_gates, "bias_gates"),
+            (weights_x_candidate, "weights_x_candidate"),
+            (weights_h_candidate, "weights_h_candidate"),
+            (bias_candidate, "bias_candidate"),
+        )
+    ]
+    (
+        x_t, h_previous, weights_x_gates, weights_h_gates, bias_gates,
+        weights_x_candidate, weights_h_candidate, bias_candidate,
+    ) = arrays
+    if x_t.ndim != 2 or h_previous.ndim != 2:
+        raise ValueError("x_t and h_previous must be two-dimensional")
+    num_examples, input_dim = x_t.shape
+    hidden_dim = h_previous.shape[1]
+    if h_previous.shape[0] != num_examples:
+        raise ValueError("x_t and h_previous must have equal batch sizes")
+    expected_shapes = (
+        (input_dim, 2 * hidden_dim), (hidden_dim, 2 * hidden_dim),
+        (2 * hidden_dim,), (input_dim, hidden_dim),
+        (hidden_dim, hidden_dim), (hidden_dim,),
+    )
+    for value, expected in zip(arrays[2:], expected_shapes):
+        if value.shape != expected:
+            raise ValueError("GRU parameters have incompatible shapes")
+
+    dtype = np.result_type(*(value.dtype for value in arrays), np.float32)
+    arrays = [value.astype(dtype, copy=False) for value in arrays]
+    (
+        x_t, h_previous, weights_x_gates, weights_h_gates, bias_gates,
+        weights_x_candidate, weights_h_candidate, bias_candidate,
+    ) = arrays
+    gate_activation = (
+        x_t @ weights_x_gates + h_previous @ weights_h_gates + bias_gates
+    )
+    activation_z, activation_r = np.split(gate_activation, 2, axis=1)
+    update_gate = _sigmoid(activation_z)
+    reset_gate = _sigmoid(activation_r)
+    candidate = np.tanh(
+        x_t @ weights_x_candidate
+        + (reset_gate * h_previous) @ weights_h_candidate
+        + bias_candidate
+    )
+    h_next = (1.0 - update_gate) * h_previous + update_gate * candidate
+    cache = (
+        x_t, h_previous, weights_x_gates, weights_h_gates,
+        weights_x_candidate, weights_h_candidate,
+        update_gate, reset_gate, candidate,
+    )
+    return h_next, cache
+
+
+def gru_step_backward(
+    dh_next: np.ndarray,
+    cache: GruStepCache,
+) -> tuple[
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray,
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray,
+]:
+    """Backpropagate through one GRU step under this module's gate convention."""
+    if not isinstance(cache, tuple) or len(cache) != 9:
+        raise TypeError("cache must be the tuple returned by gru_step_forward")
+    (
+        x_t, h_previous, weights_x_gates, weights_h_gates,
+        weights_x_candidate, weights_h_candidate,
+        update_gate, reset_gate, candidate,
+    ) = cache
+    dh_next = _as_real_array(dh_next, name="dh_next")
+    if dh_next.shape != h_previous.shape:
+        raise ValueError("dh_next must match the hidden-state shape")
+
+    dh_previous_direct = dh_next * (1.0 - update_gate)
+    dupdate_gate = dh_next * (candidate - h_previous)
+    dcandidate = dh_next * update_gate
+    dactivation_candidate = dcandidate * (1.0 - candidate**2)
+    dx_candidate = dactivation_candidate @ weights_x_candidate.T
+    dweights_x_candidate = x_t.T @ dactivation_candidate
+    reset_hidden = reset_gate * h_previous
+    dweights_h_candidate = reset_hidden.T @ dactivation_candidate
+    dreset_hidden = dactivation_candidate @ weights_h_candidate.T
+    dreset_gate = dreset_hidden * h_previous
+    dh_previous_candidate = dreset_hidden * reset_gate
+
+    dactivation_z = dupdate_gate * update_gate * (1.0 - update_gate)
+    dactivation_r = dreset_gate * reset_gate * (1.0 - reset_gate)
+    dactivation_gates = np.concatenate(
+        (dactivation_z, dactivation_r), axis=1
+    )
+    dx_gates = dactivation_gates @ weights_x_gates.T
+    dh_previous_gates = dactivation_gates @ weights_h_gates.T
+    dweights_x_gates = x_t.T @ dactivation_gates
+    dweights_h_gates = h_previous.T @ dactivation_gates
+    dbias_gates = dactivation_gates.sum(axis=0)
+    dbias_candidate = dactivation_candidate.sum(axis=0)
+    dx_t = dx_candidate + dx_gates
+    dh_previous = (
+        dh_previous_direct + dh_previous_candidate + dh_previous_gates
+    )
+    return (
+        dx_t, dh_previous,
+        dweights_x_gates, dweights_h_gates, dbias_gates,
+        dweights_x_candidate, dweights_h_candidate, dbias_candidate,
+    )

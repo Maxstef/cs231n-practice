@@ -3,6 +3,11 @@ import pytest
 
 from cs231n_practice.gradient_check import eval_numerical_gradient_array
 from cs231n_practice.rnn_layers import (
+    gru_step_backward,
+    gru_step_forward,
+    lstm_forward,
+    lstm_step_backward,
+    lstm_step_forward,
     rnn_backward,
     rnn_backward_masked,
     rnn_forward,
@@ -10,6 +15,78 @@ from cs231n_practice.rnn_layers import (
     rnn_step_backward,
     rnn_step_forward,
 )
+
+
+def test_lstm_step_backward_matches_numerical_gradients() -> None:
+    generator = np.random.default_rng(41)
+    arguments = [
+        generator.normal(size=(2, 3)),
+        generator.normal(size=(2, 4)),
+        generator.normal(size=(2, 4)),
+        generator.normal(scale=0.2, size=(3, 16)),
+        generator.normal(scale=0.2, size=(4, 16)),
+        generator.normal(scale=0.1, size=16),
+    ]
+    h_next, c_next, cache = lstm_step_forward(*arguments)
+    dh_next = generator.normal(size=h_next.shape)
+    dc_next = generator.normal(size=c_next.shape)
+    upstream = np.concatenate((dh_next, dc_next), axis=1)
+    analytical = lstm_step_backward(dh_next, dc_next, cache)
+
+    for index, (value, gradient) in enumerate(zip(arguments, analytical)):
+        def forward(candidate: np.ndarray) -> np.ndarray:
+            current = arguments.copy()
+            current[index] = candidate
+            h_value, c_value, _ = lstm_step_forward(*current)
+            return np.concatenate((h_value, c_value), axis=1)
+
+        numerical = eval_numerical_gradient_array(forward, value, upstream)
+        np.testing.assert_allclose(gradient, numerical, rtol=1e-7, atol=1e-8)
+
+
+def test_lstm_forward_carries_hidden_and_cell_states() -> None:
+    generator = np.random.default_rng(43)
+    x = generator.normal(size=(2, 4, 3))
+    h0 = generator.normal(size=(2, 5))
+    weights_x = generator.normal(scale=0.2, size=(3, 20))
+    weights_h = generator.normal(scale=0.2, size=(5, 20))
+    bias = generator.normal(scale=0.1, size=20)
+
+    hidden, cells, caches = lstm_forward(x, h0, weights_x, weights_h, bias)
+
+    assert hidden.shape == cells.shape == (2, 4, 5)
+    assert len(caches) == 4
+    first_h, first_c, _ = lstm_step_forward(
+        x[:, 0, :], h0, np.zeros_like(h0), weights_x, weights_h, bias
+    )
+    np.testing.assert_allclose(hidden[:, 0, :], first_h)
+    np.testing.assert_allclose(cells[:, 0, :], first_c)
+
+
+def test_gru_step_backward_matches_numerical_gradients() -> None:
+    generator = np.random.default_rng(47)
+    arguments = [
+        generator.normal(size=(2, 3)),
+        generator.normal(size=(2, 4)),
+        generator.normal(scale=0.2, size=(3, 8)),
+        generator.normal(scale=0.2, size=(4, 8)),
+        generator.normal(scale=0.1, size=8),
+        generator.normal(scale=0.2, size=(3, 4)),
+        generator.normal(scale=0.2, size=(4, 4)),
+        generator.normal(scale=0.1, size=4),
+    ]
+    h_next, cache = gru_step_forward(*arguments)
+    dh_next = generator.normal(size=h_next.shape)
+    analytical = gru_step_backward(dh_next, cache)
+
+    for index, (value, gradient) in enumerate(zip(arguments, analytical)):
+        def forward(candidate: np.ndarray) -> np.ndarray:
+            current = arguments.copy()
+            current[index] = candidate
+            return gru_step_forward(*current)[0]
+
+        numerical = eval_numerical_gradient_array(forward, value, dh_next)
+        np.testing.assert_allclose(gradient, numerical, rtol=1e-7, atol=1e-8)
 
 
 def test_rnn_step_forward_matches_direct_calculation() -> None:
