@@ -51,6 +51,13 @@ they are not copies of Stanford lecture slides.
 - [Image data augmentation](06-convolutional-networks/data-augmentation.md)
 - [Transfer learning with CNNs](06-convolutional-networks/transfer-learning.md)
 
+### Sequence models
+
+- [Vanilla recurrent neural networks](07-sequence-models/vanilla-rnns.md)
+- [Backpropagation through time and gradient flow](07-sequence-models/bptt-and-gradient-flow.md)
+- [LSTM and GRU gated recurrent cells](07-sequence-models/lstm-and-gru.md)
+- [Sequence generation and image captioning](07-sequence-models/sequence-generation-and-captioning.md)
+
 ## Conventions
 
 - Equations and diagrams should be recreated rather than copied from slides.

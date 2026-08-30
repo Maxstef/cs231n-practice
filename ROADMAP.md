@@ -46,8 +46,14 @@ can be explained and implemented—not merely that its lecture was watched.
 
 ## Phase 4: Sequences, attention, and transformers
 
-- [ ] Implement vanilla RNN and LSTM forward/backward passes.
-- [ ] Build a small image-captioning pipeline.
+- [x] Implement and gradient-check vanilla RNN sequence forward/backward passes
+      and LSTM/GRU recurrent steps.
+- [x] Implement reusable embeddings, masked recurrent sequences, temporal
+      projections, and temporal softmax loss.
+- [x] Study BPTT, truncated BPTT, vanishing/exploding gradients, and global-norm
+      clipping.
+- [x] Build and gradient-check a small recurrent image-captioning pipeline with
+      greedy decoding.
 - [ ] Derive scaled dot-product and multi-head attention.
 - [ ] Implement transformer building blocks.
 - [ ] Compare recurrent and transformer-based captioning.
