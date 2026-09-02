@@ -58,6 +58,12 @@ they are not copies of Stanford lecture slides.
 - [LSTM and GRU gated recurrent cells](07-sequence-models/lstm-and-gru.md)
 - [Sequence generation and image captioning](07-sequence-models/sequence-generation-and-captioning.md)
 
+### Attention and Transformers
+
+- [Attention, self-attention, and cross-attention](08-attention-transformers/attention-self-and-cross-attention.md)
+- [RNN sequence-to-sequence models with attention](08-attention-transformers/rnn-sequence-to-sequence-attention.md)
+- [Attention heads and multi-head attention](08-attention-transformers/attention-heads-and-multi-head-attention.md)
+
 ## Conventions
 
 - Equations and diagrams should be recreated rather than copied from slides.
