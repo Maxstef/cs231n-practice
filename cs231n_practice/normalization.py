@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 
 BatchNormCache = tuple[np.ndarray, np.ndarray, np.ndarray]
+LayerNormCache = tuple[np.ndarray, np.ndarray, np.ndarray]
 DropoutCache = tuple[str, np.ndarray | None]
 
 
@@ -156,6 +157,82 @@ def batchnorm_backward(
         num_examples * dout
         - dout.sum(axis=0)
         - normalized * (dout * normalized).sum(axis=0)
+    )
+    return dx, dgamma, dbeta
+
+
+def layernorm_forward(
+    x: np.ndarray,
+    gamma: np.ndarray,
+    beta: np.ndarray,
+    epsilon: float = 1e-5,
+) -> tuple[np.ndarray, LayerNormCache]:
+    """Normalize each vector across its final feature dimension.
+
+    Unlike batch normalization, this operation accepts any shape ``(..., D)``
+    and calculates separate statistics for every vector. It has identical
+    behavior during training and inference and therefore needs no running
+    statistics.
+    """
+    x = _as_real_array(x, name="x")
+    gamma = _as_real_array(gamma, name="gamma")
+    beta = _as_real_array(beta, name="beta")
+    epsilon = _real_scalar(epsilon, name="epsilon")
+    if x.ndim < 2:
+        raise ValueError("x must have shape (..., D)")
+    if gamma.shape != (x.shape[-1],) or beta.shape != (x.shape[-1],):
+        raise ValueError("gamma and beta must contain one value per feature")
+    if epsilon <= 0.0:
+        raise ValueError("epsilon must be positive")
+
+    calculation_dtype = np.result_type(x.dtype, gamma.dtype, beta.dtype, np.float32)
+    x = x.astype(calculation_dtype, copy=False)
+    gamma = gamma.astype(calculation_dtype, copy=False)
+    beta = beta.astype(calculation_dtype, copy=False)
+    mean = x.mean(axis=-1, keepdims=True)
+    variance = x.var(axis=-1, keepdims=True)
+    inverse_std = 1.0 / np.sqrt(variance + epsilon)
+    normalized = (x - mean) * inverse_std
+    output = normalized * gamma + beta
+    return output, (normalized, gamma, inverse_std)
+
+
+def layernorm_backward(
+    dout: np.ndarray,
+    cache: LayerNormCache,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return gradients for layer-normalization input, scale, and shift."""
+    if not isinstance(cache, tuple) or len(cache) != 3:
+        raise TypeError("cache must be returned by layernorm_forward")
+    normalized = _as_real_array(cache[0], name="cached normalized")
+    gamma = _as_real_array(cache[1], name="cached gamma")
+    inverse_std = _as_real_array(cache[2], name="cached inverse_std")
+    dout = _as_real_array(dout, name="dout")
+    if dout.shape != normalized.shape:
+        raise ValueError("dout must match the cached normalized shape")
+    if gamma.shape != (normalized.shape[-1],):
+        raise ValueError("cached gamma has an incompatible shape")
+    if inverse_std.shape != (*normalized.shape[:-1], 1):
+        raise ValueError("cached inverse standard deviation has an incompatible shape")
+
+    gradient_dtype = np.result_type(
+        dout.dtype, normalized.dtype, gamma.dtype, inverse_std.dtype, np.float32
+    )
+    dout = dout.astype(gradient_dtype, copy=False)
+    normalized = normalized.astype(gradient_dtype, copy=False)
+    gamma = gamma.astype(gradient_dtype, copy=False)
+    inverse_std = inverse_std.astype(gradient_dtype, copy=False)
+
+    feature_count = normalized.shape[-1]
+    reduction_axes = tuple(range(normalized.ndim - 1))
+    dbeta = dout.sum(axis=reduction_axes)
+    dgamma = (dout * normalized).sum(axis=reduction_axes)
+    dnormalized = dout * gamma
+    dx = (inverse_std / feature_count) * (
+        feature_count * dnormalized
+        - dnormalized.sum(axis=-1, keepdims=True)
+        - normalized
+        * (dnormalized * normalized).sum(axis=-1, keepdims=True)
     )
     return dx, dgamma, dbeta
 

@@ -7,6 +7,8 @@ from cs231n_practice.normalization import (
     batchnorm_forward,
     dropout_backward,
     dropout_forward,
+    layernorm_backward,
+    layernorm_forward,
 )
 
 
@@ -82,6 +84,40 @@ def test_batchnorm_backward_matches_numerical_gradients() -> None:
     np.testing.assert_allclose(dx, numerical_dx, rtol=1e-8, atol=1e-9)
     np.testing.assert_allclose(dgamma, numerical_dgamma, rtol=1e-8, atol=1e-9)
     np.testing.assert_allclose(dbeta, numerical_dbeta, rtol=1e-8, atol=1e-9)
+
+
+def test_layernorm_normalizes_every_token_independently() -> None:
+    generator = np.random.default_rng(43)
+    x = generator.normal(size=(2, 3, 5))
+
+    output, _ = layernorm_forward(x, np.ones(5), np.zeros(5))
+
+    np.testing.assert_allclose(output.mean(axis=-1), 0.0, atol=1e-7)
+    np.testing.assert_allclose(output.var(axis=-1), 1.0, atol=3e-4)
+
+
+def test_layernorm_backward_matches_numerical_gradients() -> None:
+    generator = np.random.default_rng(47)
+    x = generator.normal(size=(2, 3, 4))
+    gamma = generator.normal(size=4)
+    beta = generator.normal(size=4)
+    dout = generator.normal(size=x.shape)
+    _, cache = layernorm_forward(x, gamma, beta)
+
+    dx, dgamma, dbeta = layernorm_backward(dout, cache)
+    numerical_dx = eval_numerical_gradient_array(
+        lambda candidate: layernorm_forward(candidate, gamma, beta)[0], x, dout
+    )
+    numerical_dgamma = eval_numerical_gradient_array(
+        lambda candidate: layernorm_forward(x, candidate, beta)[0], gamma, dout
+    )
+    numerical_dbeta = eval_numerical_gradient_array(
+        lambda candidate: layernorm_forward(x, gamma, candidate)[0], beta, dout
+    )
+
+    np.testing.assert_allclose(dx, numerical_dx, rtol=1e-7, atol=1e-8)
+    np.testing.assert_allclose(dgamma, numerical_dgamma, rtol=1e-7, atol=1e-8)
+    np.testing.assert_allclose(dbeta, numerical_dbeta, rtol=1e-7, atol=1e-8)
 
 
 def test_dropout_preserves_activations_in_expectation() -> None:
