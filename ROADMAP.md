@@ -54,10 +54,11 @@ can be explained and implemented—not merely that its lecture was watched.
       clipping.
 - [x] Build and gradient-check a small recurrent image-captioning pipeline with
       greedy decoding.
-- [ ] Derive scaled dot-product and multi-head attention.
-- [ ] Implement transformer building blocks.
+- [x] Derive scaled dot-product and multi-head attention.
+- [x] Implement transformer building blocks.
 - [ ] Compare recurrent and transformer-based captioning.
-- [ ] Study the Vision Transformer representation of images.
+- [x] Study the Vision Transformer representation of images and run a small
+      controlled CIFAR-10 experiment.
 
 ## Phase 5: Understanding and localizing images
 

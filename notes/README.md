@@ -63,6 +63,8 @@ they are not copies of Stanford lecture slides.
 - [Attention, self-attention, and cross-attention](08-attention-transformers/attention-self-and-cross-attention.md)
 - [RNN sequence-to-sequence models with attention](08-attention-transformers/rnn-sequence-to-sequence-attention.md)
 - [Attention heads and multi-head attention](08-attention-transformers/attention-heads-and-multi-head-attention.md)
+- [Transformer blocks and architecture](08-attention-transformers/transformer-blocks-and-architecture.md)
+- [Vision Transformers](08-attention-transformers/vision-transformers.md)
 
 ## Conventions
 
