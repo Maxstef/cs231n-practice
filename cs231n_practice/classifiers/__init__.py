@@ -1,5 +1,6 @@
 """Classical image classifiers implemented during the course."""
 
+from cs231n_practice.classifiers.cnn import SmallConvNet
 from cs231n_practice.classifiers.knn import KNearestNeighbor
 from cs231n_practice.classifiers.linear import (
     TrainingResult,
@@ -16,6 +17,7 @@ from cs231n_practice.classifiers.vision_transformer import TinyVisionTransformer
 
 __all__ = [
     "KNearestNeighbor",
+    "SmallConvNet",
     "TrainingResult",
     "TwoLayerNet",
     "TransformerSequenceClassifier",
