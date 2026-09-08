@@ -155,11 +155,113 @@ def pairwise_box_iou(boxes_a: np.ndarray, boxes_b: np.ndarray) -> np.ndarray:
     return box_iou_aligned(boxes_a[:, None, :], boxes_b[None, :, :])
 
 
+def _detection_scores(scores: np.ndarray, *, expected_length: int) -> np.ndarray:
+    """Return one finite real confidence score per candidate."""
+    scores = np.asarray(scores)
+    if not np.issubdtype(scores.dtype, np.number) or np.issubdtype(
+        scores.dtype, np.complexfloating
+    ):
+        raise TypeError("scores must contain real numeric values")
+    if scores.shape != (expected_length,):
+        raise ValueError(f"scores must have shape ({expected_length},)")
+    if not np.all(np.isfinite(scores)):
+        raise ValueError("scores must contain finite values")
+    return scores
+
+
+def _iou_threshold(value: float) -> float:
+    """Return an IoU threshold in the closed interval from zero to one."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(
+        value, (int, float, np.number)
+    ):
+        raise TypeError("iou_threshold must be numeric")
+    value = float(value)
+    if not np.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise ValueError("iou_threshold must be between 0 and 1")
+    return value
+
+
+def non_maximum_suppression(
+    boxes: np.ndarray,
+    scores: np.ndarray,
+    iou_threshold: float,
+) -> np.ndarray:
+    """Return indices retained by greedy class-agnostic NMS.
+
+    Candidates are considered from highest to lowest score. After a candidate
+    is kept, lower-scoring candidates with IoU strictly greater than
+    ``iou_threshold`` are suppressed. An IoU exactly equal to the threshold is
+    retained. Returned indices refer to the original inputs and follow
+    descending selection order. Equal scores retain their original order.
+    """
+    boxes = _box_array(boxes, name="boxes")
+    if boxes.ndim != 2:
+        raise ValueError("boxes must have shape (N, 4)")
+    scores = _detection_scores(scores, expected_length=len(boxes))
+    iou_threshold = _iou_threshold(iou_threshold)
+
+    # Stable sorting makes equal-score behavior deterministic.
+    remaining = np.argsort(-scores, kind="stable")
+    kept: list[int] = []
+    while remaining.size > 0:
+        current = int(remaining[0])
+        kept.append(current)
+        other_indices = remaining[1:]
+        if other_indices.size == 0:
+            break
+        overlaps = box_iou_aligned(boxes[current], boxes[other_indices])
+        remaining = other_indices[overlaps <= iou_threshold]
+    return np.asarray(kept, dtype=np.int64)
+
+
+def classwise_non_maximum_suppression(
+    boxes: np.ndarray,
+    scores: np.ndarray,
+    labels: np.ndarray,
+    iou_threshold: float,
+) -> np.ndarray:
+    """Run NMS independently per integer class and return original indices.
+
+    Results from all classes are merged into descending score order. Equal
+    scores retain their original input order.
+    """
+    boxes = _box_array(boxes, name="boxes")
+    if boxes.ndim != 2:
+        raise ValueError("boxes must have shape (N, 4)")
+    scores = _detection_scores(scores, expected_length=len(boxes))
+    labels = np.asarray(labels)
+    if labels.shape != (len(boxes),):
+        raise ValueError(f"labels must have shape ({len(boxes)},)")
+    if not np.issubdtype(labels.dtype, np.integer) or np.issubdtype(
+        labels.dtype, np.bool_
+    ):
+        raise TypeError("labels must contain integers")
+    iou_threshold = _iou_threshold(iou_threshold)
+
+    kept: list[int] = []
+    for class_label in np.unique(labels):
+        class_indices = np.flatnonzero(labels == class_label)
+        local_keep = non_maximum_suppression(
+            boxes[class_indices], scores[class_indices], iou_threshold
+        )
+        kept.extend(class_indices[local_keep].tolist())
+
+    kept_array = np.asarray(kept, dtype=np.int64)
+    if kept_array.size == 0:
+        return kept_array
+    # Sort original candidate indices first so stable score sorting uses input
+    # order as the deterministic tie-breaker across different classes.
+    kept_array.sort()
+    return kept_array[np.argsort(-scores[kept_array], kind="stable")]
+
+
 __all__ = [
     "box_area_xyxy",
     "box_iou_aligned",
+    "classwise_non_maximum_suppression",
     "clip_boxes_xyxy",
     "cxcywh_to_xyxy",
+    "non_maximum_suppression",
     "pairwise_box_iou",
     "valid_boxes_xyxy",
     "xywh_to_xyxy",

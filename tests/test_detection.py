@@ -4,8 +4,10 @@ import pytest
 from cs231n_practice.detection import (
     box_area_xyxy,
     box_iou_aligned,
+    classwise_non_maximum_suppression,
     clip_boxes_xyxy,
     cxcywh_to_xyxy,
+    non_maximum_suppression,
     pairwise_box_iou,
     valid_boxes_xyxy,
     xywh_to_xyxy,
@@ -119,3 +121,89 @@ def test_pairwise_iou_requires_two_dimensional_box_collections() -> None:
 def test_clip_boxes_rejects_invalid_image_size(height: float, width: float) -> None:
     with pytest.raises(ValueError):
         clip_boxes_xyxy(np.ones(4), height, width)
+
+
+def _nms_candidates() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    boxes = np.array(
+        [
+            [10.0, 10.0, 55.0, 52.0],
+            [12.0, 12.0, 56.0, 50.0],
+            [11.0, 11.0, 54.0, 51.0],
+            [68.0, 28.0, 110.0, 72.0],
+            [70.0, 30.0, 108.0, 70.0],
+        ]
+    )
+    scores = np.array([0.855, 0.765, 0.675, 0.680, 0.585])
+    labels = np.array([0, 0, 1, 1, 1])
+    return boxes, scores, labels
+
+
+def test_class_agnostic_nms_suppresses_overlapping_different_classes() -> None:
+    boxes, scores, _ = _nms_candidates()
+
+    kept = non_maximum_suppression(boxes, scores, iou_threshold=0.5)
+
+    np.testing.assert_array_equal(kept, [0, 3])
+
+
+def test_classwise_nms_keeps_overlapping_different_classes() -> None:
+    boxes, scores, labels = _nms_candidates()
+
+    kept = classwise_non_maximum_suppression(
+        boxes, scores, labels, iou_threshold=0.5
+    )
+
+    np.testing.assert_array_equal(kept, [0, 3, 2])
+
+
+def test_nms_keeps_iou_equal_to_threshold() -> None:
+    boxes = np.array([[0, 0, 2, 2], [1, 0, 3, 2]], dtype=float)
+    scores = np.array([0.9, 0.8])
+    threshold = 1.0 / 3.0
+
+    kept = non_maximum_suppression(boxes, scores, threshold)
+
+    np.testing.assert_array_equal(kept, [0, 1])
+
+
+def test_nms_uses_original_order_to_break_equal_score_ties() -> None:
+    boxes = np.array(
+        [[0, 0, 4, 4], [1, 0, 5, 4], [10, 10, 12, 12]], dtype=float
+    )
+    scores = np.array([0.8, 0.8, 0.7])
+
+    kept = non_maximum_suppression(boxes, scores, iou_threshold=0.5)
+
+    np.testing.assert_array_equal(kept, [0, 2])
+
+
+def test_nms_handles_empty_candidates() -> None:
+    boxes = np.empty((0, 4))
+    scores = np.empty(0)
+    labels = np.empty(0, dtype=np.int64)
+
+    assert non_maximum_suppression(boxes, scores, 0.5).shape == (0,)
+    assert classwise_non_maximum_suppression(
+        boxes, scores, labels, 0.5
+    ).shape == (0,)
+
+
+@pytest.mark.parametrize("threshold", [-0.1, 1.1, np.nan, True])
+def test_nms_rejects_invalid_iou_threshold(threshold: object) -> None:
+    boxes, scores, _ = _nms_candidates()
+
+    with pytest.raises((TypeError, ValueError)):
+        non_maximum_suppression(boxes, scores, threshold)  # type: ignore[arg-type]
+
+
+def test_nms_rejects_mismatched_or_invalid_attributes() -> None:
+    boxes, scores, labels = _nms_candidates()
+    with pytest.raises(ValueError, match="scores"):
+        non_maximum_suppression(boxes, scores[:-1], 0.5)
+    with pytest.raises(ValueError, match="labels"):
+        classwise_non_maximum_suppression(boxes, scores, labels[:-1], 0.5)
+    with pytest.raises(TypeError, match="integers"):
+        classwise_non_maximum_suppression(
+            boxes, scores, labels.astype(float), 0.5
+        )
+    non_maximum_suppression,
