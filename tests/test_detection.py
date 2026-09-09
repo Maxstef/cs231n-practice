@@ -7,8 +7,11 @@ from cs231n_practice.detection import (
     classwise_non_maximum_suppression,
     clip_boxes_xyxy,
     cxcywh_to_xyxy,
+    interpolated_average_precision,
+    match_detections,
     non_maximum_suppression,
     pairwise_box_iou,
+    precision_recall_from_matches,
     valid_boxes_xyxy,
     xywh_to_xyxy,
     xyxy_to_cxcywh,
@@ -206,4 +209,138 @@ def test_nms_rejects_mismatched_or_invalid_attributes() -> None:
         classwise_non_maximum_suppression(
             boxes, scores, labels.astype(float), 0.5
         )
-    non_maximum_suppression,
+
+
+def _evaluation_example() -> tuple[
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray
+]:
+    target_boxes = np.array(
+        [[10, 10, 50, 50], [65, 15, 105, 55], [20, 58, 55, 78]],
+        dtype=float,
+    )
+    target_labels = np.array([0, 1, 0])
+    predicted_boxes = np.array(
+        [
+            [9, 9, 51, 51],
+            [12, 12, 49, 49],
+            [66, 16, 104, 54],
+            [20, 58, 55, 78],
+            [18, 57, 56, 79],
+            [75, 60, 105, 78],
+            [0, 60, 18, 78],
+        ],
+        dtype=float,
+    )
+    predicted_scores = np.array([0.95, 0.90, 0.85, 0.75, 0.70, 0.55, 0.40])
+    predicted_labels = np.array([0, 0, 1, 1, 0, 0, 1])
+    return (
+        predicted_boxes,
+        predicted_scores,
+        predicted_labels,
+        target_boxes,
+        target_labels,
+    )
+
+
+def test_match_detections_is_ranked_class_aware_and_one_to_one() -> None:
+    inputs = _evaluation_example()
+
+    order, true_positive, matched_target = match_detections(
+        *inputs, iou_threshold=0.5
+    )
+
+    np.testing.assert_array_equal(order, np.arange(7))
+    np.testing.assert_array_equal(
+        true_positive, [True, False, True, False, True, False, False]
+    )
+    np.testing.assert_array_equal(matched_target, [0, -1, 1, -1, 2, -1, -1])
+
+
+def test_match_detections_returns_decisions_in_score_order() -> None:
+    boxes = np.array([[10, 10, 20, 20], [0, 0, 5, 5]], dtype=float)
+    scores = np.array([0.2, 0.9])
+    labels = np.array([0, 0])
+    target_boxes = np.array([[10, 10, 20, 20]], dtype=float)
+    target_labels = np.array([0])
+
+    order, true_positive, matched_target = match_detections(
+        boxes, scores, labels, target_boxes, target_labels, 0.5
+    )
+
+    np.testing.assert_array_equal(order, [1, 0])
+    np.testing.assert_array_equal(true_positive, [False, True])
+    np.testing.assert_array_equal(matched_target, [-1, 0])
+
+
+def test_match_detections_handles_empty_predictions_and_targets() -> None:
+    empty_boxes = np.empty((0, 4))
+    empty_scores = np.empty(0)
+    empty_labels = np.empty(0, dtype=np.int64)
+
+    order, true_positive, matched_target = match_detections(
+        empty_boxes,
+        empty_scores,
+        empty_labels,
+        empty_boxes,
+        empty_labels,
+        0.5,
+    )
+
+    assert order.shape == true_positive.shape == matched_target.shape == (0,)
+
+
+def test_precision_recall_and_interpolated_ap_match_notebook_example() -> None:
+    true_positive = np.array([True, False, True, False, True, False, False])
+
+    precision, recall = precision_recall_from_matches(true_positive, 3)
+    average_precision, envelope_recall, envelope_precision = (
+        interpolated_average_precision(precision, recall)
+    )
+
+    np.testing.assert_allclose(
+        precision, [1, 1 / 2, 2 / 3, 1 / 2, 3 / 5, 1 / 2, 3 / 7]
+    )
+    np.testing.assert_allclose(
+        recall, [1 / 3, 1 / 3, 2 / 3, 2 / 3, 1, 1, 1]
+    )
+    np.testing.assert_allclose(average_precision, 34 / 45)
+    assert envelope_recall.shape == envelope_precision.shape == (9,)
+
+
+def test_interpolated_ap_does_not_credit_unreachable_recall() -> None:
+    true_positive = np.array([True, False, True, False, False, False, False])
+    precision, recall = precision_recall_from_matches(true_positive, 3)
+
+    average_precision, _, _ = interpolated_average_precision(precision, recall)
+
+    np.testing.assert_allclose(average_precision, 5 / 9)
+
+
+def test_interpolated_ap_handles_no_predictions() -> None:
+    average_precision, recall, precision = interpolated_average_precision(
+        np.empty(0), np.empty(0)
+    )
+
+    assert average_precision == 0.0
+    np.testing.assert_array_equal(recall, [0.0, 1.0])
+    np.testing.assert_array_equal(precision, [0.0, 0.0])
+
+
+def test_evaluation_helpers_reject_invalid_inputs() -> None:
+    boxes, scores, labels, target_boxes, target_labels = _evaluation_example()
+    with pytest.raises(ValueError, match="predicted_scores|scores"):
+        match_detections(
+            boxes, scores[:-1], labels, target_boxes, target_labels, 0.5
+        )
+    with pytest.raises(TypeError, match="predicted_labels"):
+        match_detections(
+            boxes, scores, labels.astype(float), target_boxes, target_labels, 0.5
+        )
+    with pytest.raises(TypeError, match="Boolean"):
+        precision_recall_from_matches(np.array([1, 0]), 1)
+    with pytest.raises(ValueError, match="positive"):
+        precision_recall_from_matches(np.array([True]), 0)
+    with pytest.raises(ValueError, match="nondecreasing"):
+        interpolated_average_precision([1.0, 0.5], [0.8, 0.4])
+    with pytest.raises(ValueError, match="same shape"):
+        interpolated_average_precision([1.0], [0.5, 1.0])

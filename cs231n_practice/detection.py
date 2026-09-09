@@ -1,4 +1,4 @@
-"""Reusable bounding-box geometry for object-detection practice."""
+"""Reusable geometry, post-processing, and evaluation for object detection."""
 
 import numpy as np
 
@@ -255,14 +255,176 @@ def classwise_non_maximum_suppression(
     return kept_array[np.argsort(-scores[kept_array], kind="stable")]
 
 
+def _detection_labels(
+    labels: np.ndarray,
+    *,
+    expected_length: int,
+    name: str,
+) -> np.ndarray:
+    """Return one integer class label per detection or target."""
+    labels = np.asarray(labels)
+    if labels.shape != (expected_length,):
+        raise ValueError(f"{name} must have shape ({expected_length},)")
+    if not np.issubdtype(labels.dtype, np.integer) or np.issubdtype(
+        labels.dtype, np.bool_
+    ):
+        raise TypeError(f"{name} must contain integers")
+    return labels
+
+
+def match_detections(
+    predicted_boxes: np.ndarray,
+    predicted_scores: np.ndarray,
+    predicted_labels: np.ndarray,
+    target_boxes: np.ndarray,
+    target_labels: np.ndarray,
+    iou_threshold: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Greedily match one image's predictions to ground-truth objects.
+
+    Predictions are processed from highest to lowest confidence. A prediction
+    matches the unmatched, same-class target with greatest IoU when that IoU
+    is at least ``iou_threshold``. Each target can be matched only once.
+
+    Returns
+    -------
+    order:
+        Original prediction indices in descending score order.
+    true_positive:
+        Boolean TP decisions in ranked order, not original input order.
+    matched_target:
+        Target index for each ranked prediction, or ``-1`` for an FP.
+    """
+    predicted_boxes = _box_array(predicted_boxes, name="predicted_boxes")
+    target_boxes = _box_array(target_boxes, name="target_boxes")
+    if predicted_boxes.ndim != 2:
+        raise ValueError("predicted_boxes must have shape (N, 4)")
+    if target_boxes.ndim != 2:
+        raise ValueError("target_boxes must have shape (M, 4)")
+    predicted_scores = _detection_scores(
+        predicted_scores, expected_length=len(predicted_boxes)
+    )
+    predicted_labels = _detection_labels(
+        predicted_labels,
+        expected_length=len(predicted_boxes),
+        name="predicted_labels",
+    )
+    target_labels = _detection_labels(
+        target_labels,
+        expected_length=len(target_boxes),
+        name="target_labels",
+    )
+    iou_threshold = _iou_threshold(iou_threshold)
+
+    order = np.argsort(-predicted_scores, kind="stable")
+    pairwise_ious = pairwise_box_iou(predicted_boxes, target_boxes)
+    same_class = predicted_labels[:, None] == target_labels
+    target_matched = np.zeros(len(target_boxes), dtype=bool)
+    true_positive = np.zeros(len(predicted_boxes), dtype=bool)
+    matched_target = np.full(len(predicted_boxes), -1, dtype=np.int64)
+
+    for rank, prediction_index in enumerate(order):
+        eligible_targets = np.flatnonzero(
+            same_class[prediction_index] & ~target_matched
+        )
+        if eligible_targets.size == 0:
+            continue
+
+        eligible_ious = pairwise_ious[prediction_index, eligible_targets]
+        best_target = eligible_targets[np.argmax(eligible_ious)]
+        if pairwise_ious[prediction_index, best_target] >= iou_threshold:
+            true_positive[rank] = True
+            matched_target[rank] = best_target
+            target_matched[best_target] = True
+
+    return order, true_positive, matched_target
+
+
+def precision_recall_from_matches(
+    true_positive: np.ndarray,
+    number_of_targets: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return precision and recall after every ranked prediction.
+
+    ``true_positive`` must already follow descending confidence order.
+    ``number_of_targets`` is the number of ground-truth objects for the class
+    and image collection being evaluated.
+    """
+    true_positive = np.asarray(true_positive)
+    if true_positive.ndim != 1:
+        raise ValueError("true_positive must be a one-dimensional array")
+    if true_positive.dtype != np.bool_:
+        raise TypeError("true_positive must contain Boolean values")
+    if isinstance(number_of_targets, (bool, np.bool_)) or not isinstance(
+        number_of_targets, (int, np.integer)
+    ):
+        raise TypeError("number_of_targets must be an integer")
+    if number_of_targets <= 0:
+        raise ValueError("number_of_targets must be positive")
+
+    cumulative_true_positive = np.cumsum(true_positive)
+    prediction_count = np.arange(1, len(true_positive) + 1)
+    precision = cumulative_true_positive / prediction_count
+    recall = cumulative_true_positive / number_of_targets
+    return precision, recall
+
+
+def interpolated_average_precision(
+    precision: np.ndarray,
+    recall: np.ndarray,
+) -> tuple[float, np.ndarray, np.ndarray]:
+    """Return all-point interpolated AP and its precision envelope.
+
+    Recall must be nondecreasing. Sentinel endpoints are included in the
+    returned recall and precision arrays so they can be plotted directly.
+    """
+    precision = np.asarray(precision, dtype=float)
+    recall = np.asarray(recall, dtype=float)
+    if precision.ndim != 1 or recall.ndim != 1:
+        raise ValueError("precision and recall must be one-dimensional")
+    if precision.shape != recall.shape:
+        raise ValueError("precision and recall must have the same shape")
+    if not np.all(np.isfinite(precision)) or not np.all(np.isfinite(recall)):
+        raise ValueError("precision and recall must contain finite values")
+    if np.any((precision < 0) | (precision > 1)):
+        raise ValueError("precision values must be between 0 and 1")
+    if np.any((recall < 0) | (recall > 1)):
+        raise ValueError("recall values must be between 0 and 1")
+    if np.any(np.diff(recall) < 0):
+        raise ValueError("recall must be nondecreasing")
+
+    extended_precision = np.r_[0.0, precision, 0.0]
+    extended_recall = np.r_[0.0, recall, 1.0]
+
+    # At each recall, retain the best precision available at that recall or
+    # any greater recall. This creates a non-increasing precision envelope.
+    for index in range(len(extended_precision) - 2, -1, -1):
+        extended_precision[index] = max(
+            extended_precision[index], extended_precision[index + 1]
+        )
+
+    recall_increase = np.diff(extended_recall)
+    changing_recall = recall_increase > 0
+    # Use the envelope height at the newly reached (right-hand) recall point.
+    # The final sentinel therefore contributes zero when recall never reaches 1.
+    average_precision = np.sum(
+        recall_increase[changing_recall]
+        * extended_precision[1:][changing_recall]
+    )
+    return float(average_precision), extended_recall, extended_precision
+
+
 __all__ = [
     "box_area_xyxy",
     "box_iou_aligned",
     "classwise_non_maximum_suppression",
     "clip_boxes_xyxy",
     "cxcywh_to_xyxy",
+    "interpolated_average_precision",
+    "match_detections",
     "non_maximum_suppression",
     "pairwise_box_iou",
+    "precision_recall_from_matches",
     "valid_boxes_xyxy",
     "xywh_to_xyxy",
     "xyxy_to_cxcywh",
