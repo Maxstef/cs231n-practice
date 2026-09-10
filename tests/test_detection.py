@@ -2,11 +2,13 @@ import numpy as np
 import pytest
 
 from cs231n_practice.detection import (
+    assign_anchors_to_targets,
     box_area_xyxy,
     box_iou_aligned,
     classwise_non_maximum_suppression,
     clip_boxes_xyxy,
     cxcywh_to_xyxy,
+    generate_anchors_at_location,
     interpolated_average_precision,
     match_detections,
     non_maximum_suppression,
@@ -94,6 +96,118 @@ def test_pairwise_iou_has_one_row_and_column_per_input_box() -> None:
     assert result.shape == (2, 3)
     np.testing.assert_allclose(result[0], [1.0, 1.0 / 3.0, 0.0])
     np.testing.assert_allclose(result[1], [0.0, 0.0, 0.0])
+
+
+def test_generate_anchors_preserves_area_shape_and_order() -> None:
+    anchors = generate_anchors_at_location(
+        32, 32, scales=[16, 32], aspect_ratios=[0.5, 1.0, 2.0]
+    )
+
+    assert anchors.shape == (6, 4)
+    sizes = anchors[:, 2:] - anchors[:, :2]
+    np.testing.assert_allclose(
+        sizes[:, 0] * sizes[:, 1], [256] * 3 + [1024] * 3
+    )
+    np.testing.assert_allclose(
+        anchors[[1, 4]], [[24, 24, 40, 40], [16, 16, 48, 48]]
+    )
+    np.testing.assert_allclose(
+        (anchors[:, :2] + anchors[:, 2:]) / 2,
+        np.tile([32, 32], (len(anchors), 1)),
+    )
+
+
+@pytest.mark.parametrize(
+    "center_x,center_y,scales,ratios,error_type",
+    [
+        (np.nan, 0, [16], [1], ValueError),
+        (0, True, [16], [1], TypeError),
+        (0, 0, [], [1], ValueError),
+        (0, 0, [0], [1], ValueError),
+        (0, 0, [16], [-1], ValueError),
+        (0, 0, [[16]], [1], ValueError),
+    ],
+)
+def test_generate_anchors_rejects_invalid_parameters(
+    center_x: object,
+    center_y: object,
+    scales: object,
+    ratios: object,
+    error_type: type[Exception],
+) -> None:
+    with pytest.raises(error_type):
+        generate_anchors_at_location(  # type: ignore[arg-type]
+            center_x, center_y, scales, ratios
+        )
+
+
+def test_assign_anchors_returns_labels_ious_and_target_indices() -> None:
+    anchors = np.array(
+        [
+            [20, 20, 44, 44],
+            [18, 18, 46, 46],
+            [10, 10, 30, 30],
+            [0, 0, 10, 10],
+            [15, 15, 40, 40],
+        ],
+        dtype=float,
+    )
+    targets = np.array([[20, 20, 44, 44]], dtype=float)
+
+    labels, best_iou, best_target = assign_anchors_to_targets(anchors, targets)
+
+    np.testing.assert_array_equal(labels, [1, 1, 0, 0, -1])
+    np.testing.assert_allclose(
+        best_iou, [1.0, 576 / 784, 100 / 876, 0.0, 400 / 801]
+    )
+    np.testing.assert_array_equal(best_target, [0, 0, 0, 0, 0])
+
+
+def test_assign_anchors_selects_best_of_multiple_targets() -> None:
+    anchors = np.array(
+        [[0, 0, 4, 4], [10, 10, 14, 14], [20, 20, 22, 22]], dtype=float
+    )
+    targets = np.array([[10, 10, 14, 14], [0, 0, 4, 4]], dtype=float)
+
+    labels, best_iou, best_target = assign_anchors_to_targets(anchors, targets)
+
+    np.testing.assert_array_equal(labels, [1, 1, 0])
+    np.testing.assert_array_equal(best_iou, [1.0, 1.0, 0.0])
+    np.testing.assert_array_equal(best_target, [1, 0, 0])
+
+
+def test_assign_anchors_handles_empty_anchors_and_targets() -> None:
+    empty = np.empty((0, 4))
+    one_anchor = np.array([[0, 0, 4, 4]], dtype=float)
+
+    labels, best_iou, best_target = assign_anchors_to_targets(
+        one_anchor, empty
+    )
+    np.testing.assert_array_equal(labels, [0])
+    np.testing.assert_array_equal(best_iou, [0.0])
+    np.testing.assert_array_equal(best_target, [-1])
+
+    labels, best_iou, best_target = assign_anchors_to_targets(
+        empty, one_anchor
+    )
+    assert labels.shape == best_iou.shape == best_target.shape == (0,)
+
+
+def test_assign_anchors_rejects_invalid_thresholds_and_shapes() -> None:
+    anchors = np.array([[0, 0, 4, 4]], dtype=float)
+    targets = anchors.copy()
+
+    with pytest.raises(ValueError, match="must not exceed"):
+        assign_anchors_to_targets(
+            anchors,
+            targets,
+            positive_iou_threshold=0.4,
+            negative_iou_threshold=0.5,
+        )
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        assign_anchors_to_targets(anchors, targets, 1.1, 0.3)
+    with pytest.raises(ValueError, match="shape"):
+        assign_anchors_to_targets(np.ones(4), targets)
 
 
 @pytest.mark.parametrize(

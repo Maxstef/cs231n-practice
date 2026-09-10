@@ -155,6 +155,111 @@ def pairwise_box_iou(boxes_a: np.ndarray, boxes_b: np.ndarray) -> np.ndarray:
     return box_iou_aligned(boxes_a[:, None, :], boxes_b[None, :, :])
 
 
+def _finite_scalar(value: float, *, name: str) -> float:
+    """Return a finite real scalar, excluding Boolean values."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(
+        value, (int, float, np.number)
+    ):
+        raise TypeError(f"{name} must be numeric")
+    value = float(value)
+    if not np.isfinite(value):
+        raise ValueError(f"{name} must be finite")
+    return value
+
+
+def _positive_values(values: np.ndarray, *, name: str) -> np.ndarray:
+    """Return a nonempty one-dimensional array of finite positive values."""
+    values = np.asarray(values)
+    if not np.issubdtype(values.dtype, np.number) or np.issubdtype(
+        values.dtype, np.complexfloating
+    ):
+        raise TypeError(f"{name} must contain real numeric values")
+    if values.ndim != 1 or values.size == 0:
+        raise ValueError(f"{name} must be a nonempty one-dimensional array")
+    if not np.all(np.isfinite(values)) or np.any(values <= 0):
+        raise ValueError(f"{name} must contain finite positive values")
+    return values
+
+
+def generate_anchors_at_location(
+    center_x: float,
+    center_y: float,
+    scales: np.ndarray,
+    aspect_ratios: np.ndarray,
+) -> np.ndarray:
+    """Generate corner-format anchors centered at one spatial location.
+
+    ``scale`` is the square root of anchor area and ``aspect_ratio`` is
+    width divided by height. Anchors are returned in scale-major order: every
+    aspect ratio for the first scale, then every ratio for the next scale.
+    """
+    center_x = _finite_scalar(center_x, name="center_x")
+    center_y = _finite_scalar(center_y, name="center_y")
+    scales = _positive_values(scales, name="scales")
+    aspect_ratios = _positive_values(aspect_ratios, name="aspect_ratios")
+
+    scale_grid, ratio_grid = np.meshgrid(
+        scales, aspect_ratios, indexing="ij"
+    )
+    widths = scale_grid * np.sqrt(ratio_grid)
+    heights = scale_grid / np.sqrt(ratio_grid)
+    anchors = np.stack(
+        (
+            center_x - widths / 2,
+            center_y - heights / 2,
+            center_x + widths / 2,
+            center_y + heights / 2,
+        ),
+        axis=-1,
+    )
+    return anchors.reshape(-1, 4)
+
+
+def assign_anchors_to_targets(
+    anchors: np.ndarray,
+    target_boxes: np.ndarray,
+    positive_iou_threshold: float = 0.5,
+    negative_iou_threshold: float = 0.3,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Assign positive, negative, or ignored labels using best target IoU.
+
+    Returns integer labels (``1`` positive, ``0`` negative, ``-1`` ignored),
+    each anchor's best IoU, and its best target index. When no targets exist,
+    every anchor is negative with IoU zero and target index ``-1``.
+
+    This intentionally implements only threshold-based assignment. Production
+    detectors may additionally force at least one positive anchor per target.
+    """
+    anchors = _box_array(anchors, name="anchors")
+    target_boxes = _box_array(target_boxes, name="target_boxes")
+    if anchors.ndim != 2:
+        raise ValueError("anchors must have shape (N, 4)")
+    if target_boxes.ndim != 2:
+        raise ValueError("target_boxes must have shape (M, 4)")
+    positive_iou_threshold = _iou_threshold(positive_iou_threshold)
+    negative_iou_threshold = _iou_threshold(negative_iou_threshold)
+    if negative_iou_threshold > positive_iou_threshold:
+        raise ValueError(
+            "negative_iou_threshold must not exceed positive_iou_threshold"
+        )
+
+    labels = np.full(len(anchors), -1, dtype=np.int64)
+    if len(target_boxes) == 0:
+        labels.fill(0)
+        return (
+            labels,
+            np.zeros(len(anchors), dtype=float),
+            np.full(len(anchors), -1, dtype=np.int64),
+        )
+
+    pairwise_ious = pairwise_box_iou(anchors, target_boxes)
+    best_target = np.argmax(pairwise_ious, axis=1).astype(np.int64, copy=False)
+    best_iou = pairwise_ious[np.arange(len(anchors)), best_target]
+    labels[best_iou < negative_iou_threshold] = 0
+    labels[best_iou >= positive_iou_threshold] = 1
+    return labels, best_iou, best_target
+
+
 def _detection_scores(scores: np.ndarray, *, expected_length: int) -> np.ndarray:
     """Return one finite real confidence score per candidate."""
     scores = np.asarray(scores)
@@ -415,11 +520,13 @@ def interpolated_average_precision(
 
 
 __all__ = [
+    "assign_anchors_to_targets",
     "box_area_xyxy",
     "box_iou_aligned",
     "classwise_non_maximum_suppression",
     "clip_boxes_xyxy",
     "cxcywh_to_xyxy",
+    "generate_anchors_at_location",
     "interpolated_average_precision",
     "match_detections",
     "non_maximum_suppression",
