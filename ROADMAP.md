@@ -63,8 +63,8 @@ can be explained and implemented—not merely that its lecture was watched.
 ## Phase 5: Understanding and localizing images
 
 - [ ] Understand semantic, instance, and panoptic segmentation.
-- [ ] Compare single-stage and two-stage object detectors.
-- [ ] Study region proposals, IoU, non-maximum suppression, and detection metrics.
+- [x] Compare single-stage and two-stage object detectors.
+- [x] Study region proposals, IoU, non-maximum suppression, and detection metrics.
 - [ ] Visualize learned filters, saliency maps, and intermediate activations.
 - [ ] Explore adversarial examples, feature inversion, and style transfer.
 

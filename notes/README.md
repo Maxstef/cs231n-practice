@@ -66,6 +66,13 @@ they are not copies of Stanford lecture slides.
 - [Transformer blocks and architecture](08-attention-transformers/transformer-blocks-and-architecture.md)
 - [Vision Transformers](08-attention-transformers/vision-transformers.md)
 
+### Object detection
+
+- [The object-detection problem](09-detection/detection-problem-and-localization.md)
+- [Two-stage and one-stage object detectors](09-detection/two-stage-and-one-stage-detectors.md)
+- [Detection post-processing and evaluation](09-detection/detection-postprocessing-and-evaluation.md)
+- [DETR and object detection as set prediction](09-detection/detr-and-set-prediction.md)
+
 ## Conventions
 
 - Equations and diagrams should be recreated rather than copied from slides.
