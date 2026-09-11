@@ -73,6 +73,13 @@ they are not copies of Stanford lecture slides.
 - [Detection post-processing and evaluation](09-detection/detection-postprocessing-and-evaluation.md)
 - [DETR and object detection as set prediction](09-detection/detr-and-set-prediction.md)
 
+### Segmentation and model understanding
+
+- [Semantic segmentation and dense prediction](09-segmentation/semantic-segmentation-and-dense-prediction.md)
+- [Upsampling, encoders, and decoders](09-segmentation/upsampling-encoders-and-decoders.md)
+- [Instance and panoptic segmentation](09-segmentation/instance-and-panoptic-segmentation.md)
+- [Visualizing and understanding vision models](09-segmentation/visualizing-and-understanding-vision-models.md)
+
 ## Conventions
 
 - Equations and diagrams should be recreated rather than copied from slides.
