@@ -2,8 +2,14 @@ import numpy as np
 import pytest
 
 from cs231n_practice.segmentation import (
+    binary_mask_iou,
+    compose_instance_map,
+    decode_panoptic_ids,
+    encode_panoptic_ids,
+    panoptic_quality,
     segmentation_confusion_matrix,
     segmentation_metrics,
+    select_class_mask_logits,
     semantic_cross_entropy,
 )
 
@@ -141,3 +147,132 @@ def test_segmentation_metrics_rejects_invalid_confusion_matrix() -> None:
         segmentation_metrics(np.array([[1, -1], [0, 1]]))
     with pytest.raises(TypeError, match="numeric"):
         segmentation_metrics(np.array([["1"]]))
+
+
+def test_binary_mask_iou_matches_notebook_and_empty_convention() -> None:
+    mask_a = np.array([[0, 1, 1, 0], [0, 1, 1, 0]], dtype=bool)
+    mask_b = np.array([[0, 0, 1, 0], [0, 1, 1, 1]], dtype=bool)
+
+    np.testing.assert_allclose(binary_mask_iou(mask_a, mask_b), 3 / 5)
+    np.testing.assert_allclose(binary_mask_iou(mask_a, mask_a), 1.0)
+    assert binary_mask_iou(np.zeros((2, 2), bool), np.zeros((2, 2), bool)) == 0
+
+
+def test_binary_mask_iou_rejects_non_boolean_and_different_shapes() -> None:
+    with pytest.raises(TypeError, match="Boolean"):
+        binary_mask_iou(np.ones((2, 2)), np.ones((2, 2)))
+    with pytest.raises(ValueError, match="same shape"):
+        binary_mask_iou(np.ones((2, 2), bool), np.ones((2, 3), bool))
+
+
+def test_select_class_mask_logits_selects_one_channel_per_roi() -> None:
+    mask_logits = np.arange(2 * 3 * 2 * 2).reshape(2, 3, 2, 2)
+
+    selected = select_class_mask_logits(mask_logits, np.array([2, 0]))
+
+    assert selected.shape == (2, 2, 2)
+    np.testing.assert_array_equal(selected[0], mask_logits[0, 2])
+    np.testing.assert_array_equal(selected[1], mask_logits[1, 0])
+
+
+def test_select_class_mask_logits_rejects_invalid_inputs() -> None:
+    logits = np.zeros((2, 3, 2, 2))
+    with pytest.raises(ValueError, match="shape"):
+        select_class_mask_logits(logits, np.array([[0, 1]]))
+    with pytest.raises(ValueError, match="outside"):
+        select_class_mask_logits(logits, np.array([0, 3]))
+    with pytest.raises(TypeError, match="integer"):
+        select_class_mask_logits(logits, np.array([0.0, 1.0]))
+
+
+def test_compose_instance_map_prioritizes_scores_and_preserves_ids() -> None:
+    masks = np.array(
+        [
+            [[0, 1, 1, 0], [0, 1, 1, 0], [0, 0, 0, 0]],
+            [[0, 0, 1, 1], [0, 0, 1, 1], [0, 0, 1, 0]],
+            [[0, 0, 0, 0], [0, 0, 1, 0], [1, 1, 1, 0]],
+        ],
+        dtype=bool,
+    )
+
+    composed = compose_instance_map(masks, np.array([0.95, 0.70, 0.85]))
+
+    np.testing.assert_array_equal(
+        composed, [[0, 1, 1, 2], [0, 1, 1, 2], [3, 3, 3, 0]]
+    )
+
+
+def test_compose_instance_map_uses_stable_order_for_tied_scores() -> None:
+    masks = np.ones((2, 1, 1), dtype=bool)
+
+    composed = compose_instance_map(masks, np.array([0.5, 0.5]))
+
+    np.testing.assert_array_equal(composed, [[1]])
+
+
+def test_compose_instance_map_handles_no_predictions() -> None:
+    composed = compose_instance_map(
+        np.empty((0, 2, 3), dtype=bool), np.empty(0)
+    )
+
+    np.testing.assert_array_equal(composed, np.zeros((2, 3), dtype=int))
+
+
+def test_compose_instance_map_rejects_invalid_inputs() -> None:
+    masks = np.ones((2, 2, 2), dtype=bool)
+    with pytest.raises(ValueError, match="shape"):
+        compose_instance_map(masks, np.ones(3))
+    with pytest.raises(TypeError, match="Boolean"):
+        compose_instance_map(masks.astype(int), np.ones(2))
+    with pytest.raises(ValueError, match="finite"):
+        compose_instance_map(masks, np.array([0.5, np.nan]))
+
+
+def test_panoptic_ids_round_trip_notebook_example() -> None:
+    semantic_ids = np.array([[3, 1, 1, 2], [4, 1, 1, 2]])
+    instance_ids = np.array([[0, 1, 1, 1], [0, 2, 2, 1]])
+
+    panoptic_ids = encode_panoptic_ids(semantic_ids, instance_ids)
+    decoded_semantic, decoded_instance = decode_panoptic_ids(panoptic_ids)
+
+    np.testing.assert_array_equal(
+        panoptic_ids, [[3000, 1001, 1001, 2001], [4000, 1002, 1002, 2001]]
+    )
+    np.testing.assert_array_equal(decoded_semantic, semantic_ids)
+    np.testing.assert_array_equal(decoded_instance, instance_ids)
+
+
+def test_panoptic_ids_reject_ambiguous_or_invalid_values() -> None:
+    ids = np.array([[0, 1]])
+    with pytest.raises(ValueError, match="same shape"):
+        encode_panoptic_ids(ids, np.array([0, 1]))
+    with pytest.raises(ValueError, match="smaller"):
+        encode_panoptic_ids(ids, np.array([[0, 1000]]))
+    with pytest.raises(ValueError, match="nonnegative"):
+        decode_panoptic_ids(np.array([[-1]]))
+    with pytest.raises(TypeError, match="divisor"):
+        decode_panoptic_ids(ids, divisor=True)
+
+
+def test_panoptic_quality_matches_notebook_example() -> None:
+    sq, rq, pq = panoptic_quality(np.array([0.8, 0.7, 0.6]), 1, 2)
+
+    np.testing.assert_allclose(sq, 0.7)
+    np.testing.assert_allclose(rq, 2 / 3)
+    np.testing.assert_allclose(pq, 7 / 15)
+
+
+def test_panoptic_quality_handles_no_segments_or_no_matches() -> None:
+    assert panoptic_quality(np.empty(0), 0, 0) == (0.0, 0.0, 0.0)
+    assert panoptic_quality(np.empty(0), 2, 1) == (0.0, 0.0, 0.0)
+
+
+def test_panoptic_quality_rejects_invalid_inputs() -> None:
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        panoptic_quality(np.array([1.1]), 0, 0)
+    with pytest.raises(ValueError, match="one-dimensional"):
+        panoptic_quality(np.array([[0.8]]), 0, 0)
+    with pytest.raises(ValueError, match="nonnegative"):
+        panoptic_quality(np.array([0.8]), -1, 0)
+    with pytest.raises(TypeError, match="integer"):
+        panoptic_quality(np.array([0.8]), 1.0, 0)
