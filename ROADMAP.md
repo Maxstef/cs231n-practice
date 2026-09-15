@@ -62,15 +62,21 @@ can be explained and implemented—not merely that its lecture was watched.
 
 ## Phase 5: Understanding and localizing images
 
-- [ ] Understand semantic, instance, and panoptic segmentation.
+- [x] Understand semantic, instance, and panoptic segmentation.
 - [x] Compare single-stage and two-stage object detectors.
 - [x] Study region proposals, IoU, non-maximum suppression, and detection metrics.
-- [ ] Visualize learned filters, saliency maps, and intermediate activations.
+- [x] Visualize learned filters, saliency maps, and intermediate activations;
+      compare input saliency, occlusion, CAM, and Grad-CAM.
 - [ ] Explore adversarial examples, feature inversion, and style transfer.
 
 ## Phase 6: Remaining Spring 2025 topics
 
-- [ ] Video understanding.
+- [ ] Understand video tensors, clip sampling, and temporal fusion.
+- [ ] Implement and compare 3D convolution, motion representations, and
+      two-stream video classifiers.
+- [ ] Explore long-range temporal modeling and multimodal video understanding.
+- [ ] Run a controlled video-classification comparison and extract reusable
+      utilities.
 - [ ] Large-scale distributed training.
 - [ ] Self-supervised and contrastive learning.
 - [ ] Variational autoencoders, GANs, and autoregressive models.
