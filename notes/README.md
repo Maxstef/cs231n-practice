@@ -6,6 +6,16 @@ they are not copies of Stanford lecture slides.
 
 ## Contents
 
+### Python, NumPy, and PyTorch foundations
+
+- [Reordering array and tensor axes](00-python-numpy/axis-reordering.md)
+- [Reshaping and flattening](00-python-numpy/reshaping-and-flattening.md)
+- [Broadcasting and new axes](00-python-numpy/broadcasting-and-new-axes.md)
+- [Reductions and axes](00-python-numpy/reductions-and-axes.md)
+- [Indexing and scatter-add](00-python-numpy/indexing-and-scatter-add.md)
+- [PyTorch: detach, cpu, and clone](00-python-numpy/detach-cpu-and-clone.md)
+- [PyTorch gradient methods and properties](00-python-numpy/pytorch-grad-basics.md)
+
 ### Course context
 
 - [Computer vision and deep learning](01-course-context/computer-vision-and-deep-learning.md)
