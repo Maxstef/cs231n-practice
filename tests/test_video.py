@@ -1,10 +1,16 @@
+import numpy as np
 import pytest
 import torch
+import torch.nn.functional as F
 
 from cs231n_practice.video import (
     average_clip_scores,
+    conv3d_forward_naive,
+    conv3d_output_shape,
+    inflate_conv2d_weights,
     sample_clip_indices,
     sample_video_clip,
+    spatiotemporal_receptive_field,
     stack_frames_as_channels,
     video_to_conv3d_batch,
 )
@@ -95,3 +101,84 @@ def test_video_helpers_reject_wrong_shapes() -> None:
         video_to_conv3d_batch(torch.zeros(2, 3, 4, 5))
     with pytest.raises(ValueError, match="shape"):
         average_clip_scores(torch.zeros(2, 3))
+
+
+def test_conv3d_output_shape_supports_independent_dimensions() -> None:
+    output = conv3d_output_shape(
+        (8, 16, 20), kernel_size=(3, 3, 5), padding=(1, 1, 2), stride=2
+    )
+
+    assert output == (4, 8, 10)
+
+
+def test_conv3d_forward_naive_matches_pytorch() -> None:
+    generator = np.random.default_rng(11)
+    x = generator.normal(size=(2, 2, 4, 5, 6))
+    weights = generator.normal(size=(3, 2, 2, 3, 3))
+    bias = generator.normal(size=(3,))
+
+    output = conv3d_forward_naive(
+        x, weights, bias, stride=(2, 1, 2), padding=(1, 1, 1)
+    )
+    expected = F.conv3d(
+        torch.from_numpy(x),
+        torch.from_numpy(weights),
+        torch.from_numpy(bias),
+        stride=(2, 1, 2),
+        padding=(1, 1, 1),
+    ).numpy()
+
+    np.testing.assert_allclose(output, expected, rtol=1e-12, atol=1e-12)
+
+
+def test_conv3d_forward_naive_includes_bias_and_all_input_channels() -> None:
+    x = np.ones((1, 2, 2, 1, 1))
+    weights = np.array([[[[[1.0]], [[2.0]]], [[[3.0]], [[4.0]]]]])
+
+    output = conv3d_forward_naive(x, weights, np.array([5.0]))
+
+    assert output.shape == (1, 1, 1, 1, 1)
+    np.testing.assert_allclose(output.item(), 1 + 2 + 3 + 4 + 5)
+
+
+def test_inflate_conv2d_weights_preserves_temporal_sum() -> None:
+    weights = np.arange(2 * 3 * 2 * 2).reshape(2, 3, 2, 2)
+
+    inflated = inflate_conv2d_weights(weights, temporal_kernel_size=3)
+
+    assert inflated.shape == (2, 3, 3, 2, 2)
+    np.testing.assert_allclose(inflated.sum(axis=2), weights)
+    np.testing.assert_allclose(inflated[:, :, 0], weights / 3)
+
+
+def test_spatiotemporal_receptive_field_tracks_jump() -> None:
+    receptive_field, jump = spatiotemporal_receptive_field(
+        [(3, 3, 3), (3, 3, 3)], strides=[1, (2, 2, 2)]
+    )
+
+    assert receptive_field == (5, 5, 5)
+    assert jump == (2, 2, 2)
+
+
+def test_receptive_field_uses_previous_layer_jump() -> None:
+    receptive_field, jump = spatiotemporal_receptive_field(
+        [(3, 3, 3), (3, 3, 3)], strides=[2, 1]
+    )
+
+    assert receptive_field == (7, 7, 7)
+    assert jump == (2, 2, 2)
+
+
+def test_new_video_utilities_reject_invalid_inputs() -> None:
+    with pytest.raises(ValueError, match="fit"):
+        conv3d_output_shape((2, 4, 4), kernel_size=(3, 1, 1))
+    with pytest.raises(ValueError, match="input-channel"):
+        conv3d_forward_naive(
+            np.zeros((1, 2, 3, 3, 3)),
+            np.zeros((1, 1, 1, 1, 1)),
+            np.zeros(1),
+        )
+    with pytest.raises(ValueError, match="shape"):
+        inflate_conv2d_weights(np.zeros((2, 3, 3)), 3)
+    with pytest.raises(ValueError, match="one value per layer"):
+        spatiotemporal_receptive_field([3, 3], strides=[1])

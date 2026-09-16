@@ -1,7 +1,9 @@
 """Small reusable helpers for video clips and temporal fusion."""
 
 from numbers import Integral
+from collections.abc import Sequence
 
+import numpy as np
 import torch
 
 
@@ -23,6 +25,23 @@ def _video_tensor(value: torch.Tensor, name: str, ndim: int) -> torch.Tensor:
         expected = "(T, C, H, W)" if ndim == 4 else "(N, T, C, H, W)"
         raise ValueError(f"{name} must have nonempty shape {expected}")
     return value
+
+
+def _triple(
+    value: int | Sequence[int], name: str, *, minimum: int
+) -> tuple[int, int, int]:
+    """Return one integer repeated three times or validate a length-3 value."""
+    if isinstance(value, Integral) and not isinstance(value, bool):
+        item = _integer(value, name, minimum=minimum)
+        return item, item, item
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise TypeError(f"{name} must be an integer or a sequence of three integers")
+    if len(value) != 3:
+        raise ValueError(f"{name} must contain exactly three values")
+    return tuple(
+        _integer(item, f"{name}[{index}]", minimum=minimum)
+        for index, item in enumerate(value)
+    )  # type: ignore[return-value]
 
 
 def sample_clip_indices(
@@ -87,3 +106,181 @@ def average_clip_scores(scores: torch.Tensor) -> torch.Tensor:
     if not scores.is_floating_point():
         raise TypeError("scores must contain floating-point values")
     return scores.mean(dim=1)
+
+
+def conv3d_output_shape(
+    input_shape: Sequence[int],
+    kernel_size: int | Sequence[int],
+    padding: int | Sequence[int] = 0,
+    stride: int | Sequence[int] = 1,
+) -> tuple[int, int, int]:
+    """Return ``(T_out, H_out, W_out)`` for a 3D convolution.
+
+    ``input_shape`` contains ``(T, H, W)``. Kernel size, padding, and stride
+    may each be one integer or separate temporal and spatial values.
+    """
+    input_t, input_h, input_w = _triple(input_shape, "input_shape", minimum=1)
+    kernel_t, kernel_h, kernel_w = _triple(
+        kernel_size, "kernel_size", minimum=1
+    )
+    padding_t, padding_h, padding_w = _triple(
+        padding, "padding", minimum=0
+    )
+    stride_t, stride_h, stride_w = _triple(stride, "stride", minimum=1)
+
+    output = tuple(
+        (input_size + 2 * pad - kernel) // step + 1
+        for input_size, kernel, pad, step in zip(
+            (input_t, input_h, input_w),
+            (kernel_t, kernel_h, kernel_w),
+            (padding_t, padding_h, padding_w),
+            (stride_t, stride_h, stride_w),
+        )
+    )
+    if any(size <= 0 for size in output):
+        raise ValueError("kernel does not fit the padded input")
+    return output  # type: ignore[return-value]
+
+
+def conv3d_forward_naive(
+    x: np.ndarray,
+    weights: np.ndarray,
+    bias: np.ndarray,
+    stride: int | Sequence[int] = 1,
+    padding: int | Sequence[int] = 0,
+) -> np.ndarray:
+    """Compute a direct 3D cross-correlation for educational verification.
+
+    Args:
+        x: Input with shape ``(N, C_in, T, H, W)``.
+        weights: Filter bank with shape
+            ``(C_out, C_in, K_t, K_h, K_w)``.
+        bias: One bias per output channel, shape ``(C_out,)``.
+        stride: Integer or ``(S_t, S_h, S_w)``.
+        padding: Integer or ``(P_t, P_h, P_w)``.
+    """
+    x = np.asarray(x)
+    weights = np.asarray(weights)
+    bias = np.asarray(bias)
+    for value, name in ((x, "x"), (weights, "weights"), (bias, "bias")):
+        if not np.issubdtype(value.dtype, np.number) or np.issubdtype(
+            value.dtype, np.complexfloating
+        ):
+            raise TypeError(f"{name} must contain real numeric values")
+        if not np.all(np.isfinite(value)):
+            raise ValueError(f"{name} must contain finite values")
+    if x.ndim != 5 or any(size == 0 for size in x.shape):
+        raise ValueError("x must have nonempty shape (N, C_in, T, H, W)")
+    if weights.ndim != 5 or any(size == 0 for size in weights.shape):
+        raise ValueError(
+            "weights must have nonempty shape (C_out, C_in, K_t, K_h, K_w)"
+        )
+    if x.shape[1] != weights.shape[1]:
+        raise ValueError("x and weights must have the same input-channel count")
+    if bias.shape != (weights.shape[0],):
+        raise ValueError("bias must contain one value per output channel")
+
+    stride_t, stride_h, stride_w = _triple(stride, "stride", minimum=1)
+    padding_t, padding_h, padding_w = _triple(
+        padding, "padding", minimum=0
+    )
+    output_t, output_h, output_w = conv3d_output_shape(
+        x.shape[2:], weights.shape[2:], padding, stride
+    )
+    padded = np.pad(
+        x,
+        (
+            (0, 0),
+            (0, 0),
+            (padding_t, padding_t),
+            (padding_h, padding_h),
+            (padding_w, padding_w),
+        ),
+    )
+    calculation_dtype = np.result_type(x.dtype, weights.dtype, bias.dtype, np.float32)
+    output = np.empty(
+        (x.shape[0], weights.shape[0], output_t, output_h, output_w),
+        dtype=calculation_dtype,
+    )
+    kernel_t, kernel_h, kernel_w = weights.shape[2:]
+
+    for n in range(x.shape[0]):
+        for f in range(weights.shape[0]):
+            for t in range(output_t):
+                t_start = t * stride_t
+                for row in range(output_h):
+                    row_start = row * stride_h
+                    for column in range(output_w):
+                        column_start = column * stride_w
+                        patch = padded[
+                            n,
+                            :,
+                            t_start : t_start + kernel_t,
+                            row_start : row_start + kernel_h,
+                            column_start : column_start + kernel_w,
+                        ]
+                        output[n, f, t, row, column] = (
+                            np.sum(patch * weights[f]) + bias[f]
+                        )
+    return output
+
+
+def inflate_conv2d_weights(
+    weights: np.ndarray, temporal_kernel_size: int
+) -> np.ndarray:
+    """Repeat 2D filters through time and preserve their summed scale."""
+    weights = np.asarray(weights)
+    temporal_kernel_size = _integer(
+        temporal_kernel_size, "temporal_kernel_size", minimum=1
+    )
+    if weights.ndim != 4 or any(size == 0 for size in weights.shape):
+        raise ValueError("weights must have nonempty shape (C_out, C_in, K_h, K_w)")
+    if not np.issubdtype(weights.dtype, np.number) or np.issubdtype(
+        weights.dtype, np.complexfloating
+    ):
+        raise TypeError("weights must contain real numeric values")
+    if not np.all(np.isfinite(weights)):
+        raise ValueError("weights must contain finite values")
+
+    calculation_dtype = np.result_type(weights.dtype, np.float32)
+    weights = weights.astype(calculation_dtype, copy=False)
+    return np.repeat(
+        weights[:, :, None, :, :], temporal_kernel_size, axis=2
+    ) / temporal_kernel_size
+
+
+def spatiotemporal_receptive_field(
+    kernel_sizes: Sequence[int | Sequence[int]],
+    strides: int | Sequence[int | Sequence[int]] = 1,
+) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    """Return receptive field and jump for a stack of 3D layers.
+
+    Values are ordered as ``(time, height, width)``. Dilation is assumed to be
+    one. ``strides`` may be one shared integer or one value per layer.
+    """
+    kernels = list(kernel_sizes)
+    if not kernels:
+        raise ValueError("kernel_sizes must contain at least one layer")
+    kernel_triples = [
+        _triple(kernel, f"kernel_sizes[{index}]", minimum=1)
+        for index, kernel in enumerate(kernels)
+    ]
+    if isinstance(strides, Integral) and not isinstance(strides, bool):
+        stride_triples = [_triple(strides, "strides", minimum=1)] * len(kernels)
+    else:
+        if isinstance(strides, (str, bytes)) or not isinstance(strides, Sequence):
+            raise TypeError("strides must be an integer or one value per layer")
+        if len(strides) != len(kernels):
+            raise ValueError("strides must contain one value per layer")
+        stride_triples = [
+            _triple(step, f"strides[{index}]", minimum=1)
+            for index, step in enumerate(strides)
+        ]
+
+    receptive_field = [1, 1, 1]
+    jump = [1, 1, 1]
+    for kernel, step in zip(kernel_triples, stride_triples):
+        for axis in range(3):
+            receptive_field[axis] += (kernel[axis] - 1) * jump[axis]
+            jump[axis] *= step[axis]
+    return tuple(receptive_field), tuple(jump)  # type: ignore[return-value]
