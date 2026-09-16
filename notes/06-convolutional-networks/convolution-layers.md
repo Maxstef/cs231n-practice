@@ -63,6 +63,8 @@ response = np.sum(patch * weights[filter_index]) + bias[filter_index]
 Deep-learning libraries conventionally call this operation convolution even
 though the filter is not flipped. Mathematically, the implemented operation is
 cross-correlation. Learned filters make either convention equally expressive.
+See [Convolution versus cross-correlation](convolution-vs-cross-correlation.md)
+for a numeric comparison of the two conventions.
 
 ## Output dimensions
 

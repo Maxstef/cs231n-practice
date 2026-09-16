@@ -54,6 +54,7 @@ they are not copies of Stanford lecture slides.
 ### Convolutional neural networks
 
 - [Convolution layers](06-convolutional-networks/convolution-layers.md)
+- [Convolution versus cross-correlation](06-convolutional-networks/convolution-vs-cross-correlation.md)
 - [Pooling and spatial downsampling](06-convolutional-networks/pooling-and-downsampling.md)
 - [Receptive fields and small CNNs](06-convolutional-networks/receptive-fields-and-small-cnns.md)
 - [From early CNNs to deeper architectures](06-convolutional-networks/cnn-architectures.md)
