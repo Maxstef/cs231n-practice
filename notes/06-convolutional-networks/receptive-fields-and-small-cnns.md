@@ -44,6 +44,10 @@ $$
 Three $3\times3$ convolutions therefore produce receptive fields of $3\times3$,
 $5\times5$, and $7\times7$.
 
+These formulas assume dilation 1. See
+[Dilation and the parameters that affect receptive fields](dilation-and-receptive-fields.md)
+for effective kernel size and the general recurrence with dilation.
+
 ## Example containing pooling
 
 Consider:
