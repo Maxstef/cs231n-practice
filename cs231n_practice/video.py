@@ -97,6 +97,35 @@ def stack_frames_as_channels(videos: torch.Tensor) -> torch.Tensor:
     )
 
 
+def temporal_difference(videos: torch.Tensor) -> torch.Tensor:
+    """Return consecutive next-frame minus current-frame differences.
+
+    The input has shape ``(N, T, C, H, W)`` and the result has shape
+    ``(N, T - 1, C, H, W)``. Floating-point input is required so negative
+    changes are represented correctly instead of wrapping as unsigned values.
+    """
+    videos = _video_tensor(videos, "videos", 5)
+    if videos.shape[1] < 2:
+        raise ValueError("videos must contain at least two frames")
+    if not videos.is_floating_point():
+        raise TypeError("videos must contain floating-point values")
+    return videos[:, 1:] - videos[:, :-1]
+
+
+def stack_temporal_differences(videos: torch.Tensor) -> torch.Tensor:
+    """Stack consecutive frame differences along the channel axis.
+
+    This converts ``(N, T, C, H, W)`` videos to motion inputs shaped
+    ``(N, (T - 1) * C, H, W)``. Within the stacked channels, all ``C``
+    channels from one time step remain together and time order is preserved.
+    """
+    differences = temporal_difference(videos)
+    number_of_videos, steps, channels, height, width = differences.shape
+    return differences.reshape(
+        number_of_videos, steps * channels, height, width
+    )
+
+
 def average_clip_scores(scores: torch.Tensor) -> torch.Tensor:
     """Average ``(N, K, classes)`` scores across ``K`` clips per video."""
     if not isinstance(scores, torch.Tensor):

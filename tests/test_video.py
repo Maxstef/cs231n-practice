@@ -12,6 +12,8 @@ from cs231n_practice.video import (
     sample_video_clip,
     spatiotemporal_receptive_field,
     stack_frames_as_channels,
+    stack_temporal_differences,
+    temporal_difference,
     video_to_conv3d_batch,
 )
 
@@ -81,6 +83,52 @@ def test_stack_frames_as_channels_keeps_frame_channel_order() -> None:
     assert output.shape == (2, 12, 2, 5)
     for t in range(4):
         torch.testing.assert_close(output[:, 3 * t : 3 * (t + 1)], videos[:, t])
+
+
+def test_temporal_difference_subtracts_each_adjacent_frame() -> None:
+    videos = torch.tensor(
+        [[[[[1.0]], [[10.0]]], [[[4.0]], [[20.0]]], [[[9.0]], [[35.0]]]]]
+    )
+
+    differences = temporal_difference(videos)
+
+    expected = torch.tensor([[[[[3.0]], [[10.0]]], [[[5.0]], [[15.0]]]]])
+    assert differences.shape == (1, 2, 2, 1, 1)
+    torch.testing.assert_close(differences, expected)
+    assert differences.dtype == videos.dtype
+    assert differences.device == videos.device
+
+
+def test_stack_temporal_differences_keeps_time_channel_order() -> None:
+    videos = torch.tensor(
+        [[[[[1.0]], [[10.0]]], [[[4.0]], [[20.0]]], [[[9.0]], [[35.0]]]]]
+    )
+
+    stacked = stack_temporal_differences(videos)
+
+    expected = torch.tensor([[[[3.0]], [[10.0]], [[5.0]], [[15.0]]]])
+    assert stacked.shape == (1, 4, 1, 1)
+    torch.testing.assert_close(stacked, expected)
+
+
+def test_temporal_difference_preserves_autograd() -> None:
+    videos = torch.randn(2, 4, 1, 3, 3, requires_grad=True)
+
+    temporal_difference(videos).sum().backward()
+
+    assert videos.grad is not None
+    torch.testing.assert_close(videos.grad[:, 0], -torch.ones_like(videos[:, 0]))
+    torch.testing.assert_close(videos.grad[:, 1:-1], torch.zeros_like(videos[:, 1:-1]))
+    torch.testing.assert_close(videos.grad[:, -1], torch.ones_like(videos[:, -1]))
+
+
+def test_temporal_difference_rejects_invalid_input() -> None:
+    with pytest.raises(ValueError, match="shape"):
+        temporal_difference(torch.zeros(2, 3, 4, 5))
+    with pytest.raises(ValueError, match="at least two frames"):
+        temporal_difference(torch.zeros(2, 1, 3, 4, 5))
+    with pytest.raises(TypeError, match="floating-point"):
+        temporal_difference(torch.zeros(2, 3, 1, 4, 5, dtype=torch.uint8))
 
 
 def test_average_clip_scores_reduces_only_clip_axis() -> None:
