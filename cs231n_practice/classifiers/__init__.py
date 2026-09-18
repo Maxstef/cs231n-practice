@@ -13,14 +13,20 @@ from cs231n_practice.classifiers.linear import (
 )
 from cs231n_practice.classifiers.neural_net import TwoLayerNet
 from cs231n_practice.classifiers.transformer import TransformerSequenceClassifier
+from cs231n_practice.classifiers.video import (
+    Small3DVideoClassifier,
+    TwoStreamVideoClassifier,
+)
 from cs231n_practice.classifiers.vision_transformer import TinyVisionTransformer
 
 __all__ = [
     "KNearestNeighbor",
     "SmallConvNet",
+    "Small3DVideoClassifier",
     "TrainingResult",
     "TwoLayerNet",
     "TransformerSequenceClassifier",
+    "TwoStreamVideoClassifier",
     "TinyVisionTransformer",
     "classification_accuracy",
     "linear_scores",
