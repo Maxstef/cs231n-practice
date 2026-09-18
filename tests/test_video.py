@@ -4,6 +4,8 @@ import torch
 import torch.nn.functional as F
 
 from cs231n_practice.video import (
+    NonLocalBlock3D,
+    attention_entry_counts,
     average_clip_scores,
     conv3d_forward_naive,
     conv3d_output_shape,
@@ -14,7 +16,9 @@ from cs231n_practice.video import (
     stack_frames_as_channels,
     stack_temporal_differences,
     temporal_difference,
+    tokens_to_video_features,
     video_to_conv3d_batch,
+    video_features_to_tokens,
 )
 
 
@@ -129,6 +133,94 @@ def test_temporal_difference_rejects_invalid_input() -> None:
         temporal_difference(torch.zeros(2, 1, 3, 4, 5))
     with pytest.raises(TypeError, match="floating-point"):
         temporal_difference(torch.zeros(2, 3, 1, 4, 5, dtype=torch.uint8))
+
+
+def test_video_feature_token_conversion_preserves_position_order() -> None:
+    features = torch.arange(2 * 3 * 4 * 2 * 5).reshape(2, 3, 4, 2, 5)
+
+    tokens = video_features_to_tokens(features)
+
+    assert tokens.shape == (2, 40, 3)
+    for t in range(4):
+        for row in range(2):
+            for column in range(5):
+                position = t * 2 * 5 + row * 5 + column
+                torch.testing.assert_close(
+                    tokens[:, position], features[:, :, t, row, column]
+                )
+
+
+def test_video_feature_tokens_make_an_exact_round_trip() -> None:
+    features = torch.randn(2, 3, 4, 2, 5, requires_grad=True)
+
+    tokens = video_features_to_tokens(features)
+    restored = tokens_to_video_features(tokens, time=4, height=2, width=5)
+
+    assert restored.shape == features.shape
+    torch.testing.assert_close(restored, features)
+    restored.sum().backward()
+    torch.testing.assert_close(features.grad, torch.ones_like(features))
+
+
+def test_video_feature_token_helpers_reject_invalid_inputs() -> None:
+    with pytest.raises(ValueError, match="shape"):
+        video_features_to_tokens(torch.zeros(2, 3, 4, 5))
+    with pytest.raises(ValueError, match="shape"):
+        tokens_to_video_features(torch.zeros(2, 3), 1, 1, 1)
+    with pytest.raises(ValueError, match="token count"):
+        tokens_to_video_features(torch.zeros(2, 7, 3), 2, 2, 2)
+    with pytest.raises(TypeError, match="integer"):
+        tokens_to_video_features(torch.zeros(2, 8, 3), True, 2, 2)
+
+
+def test_attention_entry_counts_matches_notebook_example() -> None:
+    assert attention_entry_counts(3, 2, 2) == (144, 84)
+    assert attention_entry_counts(8, 14, 14) == (2_458_624, 319_872)
+
+
+def test_attention_entry_counts_rejects_invalid_dimensions() -> None:
+    with pytest.raises(ValueError, match="at least 1"):
+        attention_entry_counts(0, 2, 2)
+    with pytest.raises(TypeError, match="integer"):
+        attention_entry_counts(3, 2.5, 2)  # type: ignore[arg-type]
+
+
+def test_nonlocal_block_starts_as_identity() -> None:
+    torch.manual_seed(31)
+    block = NonLocalBlock3D(channels=4, attention_channels=2)
+    x = torch.randn(2, 4, 3, 2, 5)
+
+    output = block(x)
+
+    torch.testing.assert_close(output, x)
+
+
+def test_nonlocal_block_adds_learned_update_and_propagates_gradients() -> None:
+    torch.manual_seed(37)
+    block = NonLocalBlock3D(channels=4, attention_channels=2)
+    with torch.no_grad():
+        block.gamma.fill_(1.0)
+    x = torch.randn(2, 4, 3, 2, 5, requires_grad=True)
+
+    output = block(x)
+    output.square().mean().backward()
+
+    assert output.shape == x.shape
+    assert not torch.allclose(output, x)
+    assert x.grad is not None and torch.isfinite(x.grad).all()
+    for parameter in block.parameters():
+        assert parameter.grad is not None
+        assert torch.isfinite(parameter.grad).all()
+
+
+def test_nonlocal_block_rejects_invalid_inputs() -> None:
+    block = NonLocalBlock3D(channels=4)
+    with pytest.raises(ValueError, match="shape"):
+        block(torch.zeros(2, 4, 3, 5))
+    with pytest.raises(ValueError, match="4 channels"):
+        block(torch.zeros(2, 3, 3, 2, 5))
+    with pytest.raises(TypeError, match="floating-point"):
+        block(torch.zeros(2, 4, 3, 2, 5, dtype=torch.int64))
 
 
 def test_average_clip_scores_reduces_only_clip_axis() -> None:

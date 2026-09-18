@@ -5,6 +5,7 @@ from collections.abc import Sequence
 
 import numpy as np
 import torch
+from torch import nn
 
 
 def _integer(value: int, name: str, *, minimum: int) -> int:
@@ -124,6 +125,114 @@ def stack_temporal_differences(videos: torch.Tensor) -> torch.Tensor:
     return differences.reshape(
         number_of_videos, steps * channels, height, width
     )
+
+
+def video_features_to_tokens(features: torch.Tensor) -> torch.Tensor:
+    """Convert ``(N, C, T, H, W)`` features to ``(N, T*H*W, C)`` tokens."""
+    if not isinstance(features, torch.Tensor):
+        raise TypeError("features must be a PyTorch tensor")
+    if features.ndim != 5 or any(size == 0 for size in features.shape):
+        raise ValueError("features must have nonempty shape (N, C, T, H, W)")
+    n, channels, time, height, width = features.shape
+    return features.permute(0, 2, 3, 4, 1).reshape(
+        n, time * height * width, channels
+    )
+
+
+def tokens_to_video_features(
+    tokens: torch.Tensor,
+    time: int,
+    height: int,
+    width: int,
+) -> torch.Tensor:
+    """Convert ``(N, T*H*W, C)`` tokens to ``(N, C, T, H, W)`` features."""
+    if not isinstance(tokens, torch.Tensor):
+        raise TypeError("tokens must be a PyTorch tensor")
+    if tokens.ndim != 3 or any(size == 0 for size in tokens.shape):
+        raise ValueError("tokens must have nonempty shape (N, T*H*W, C)")
+    time = _integer(time, "time", minimum=1)
+    height = _integer(height, "height", minimum=1)
+    width = _integer(width, "width", minimum=1)
+    n, positions, channels = tokens.shape
+    if positions != time * height * width:
+        raise ValueError("token count must equal time * height * width")
+    return tokens.reshape(n, time, height, width, channels).permute(
+        0, 4, 1, 2, 3
+    )
+
+
+def attention_entry_counts(
+    time: int,
+    height: int,
+    width: int,
+) -> tuple[int, int]:
+    """Return joint and factorized space-time attention matrix entry counts.
+
+    Joint attention uses one ``(T*H*W)`` squared matrix. Factorized attention
+    counts spatial attention within every frame plus temporal attention at
+    every spatial position: ``T*(H*W)^2 + H*W*T^2``.
+    """
+    time = _integer(time, "time", minimum=1)
+    height = _integer(height, "height", minimum=1)
+    width = _integer(width, "width", minimum=1)
+    spatial_positions = height * width
+    joint = (time * spatial_positions) ** 2
+    factorized = time * spatial_positions**2 + spatial_positions * time**2
+    return joint, factorized
+
+
+class NonLocalBlock3D(nn.Module):
+    """Apply residual global self-attention to ``(N, C, T, H, W)`` features.
+
+    Pointwise 3D convolutions project channels into query, key, and value
+    features. Attention then connects every space-time position to every
+    other position. The learnable residual scale starts at zero, so a newly
+    created block initially returns its input exactly.
+    """
+
+    def __init__(
+        self,
+        channels: int,
+        attention_channels: int | None = None,
+    ) -> None:
+        super().__init__()
+        channels = _integer(channels, "channels", minimum=1)
+        if attention_channels is None:
+            attention_channels = max(1, channels // 2)
+        attention_channels = _integer(
+            attention_channels, "attention_channels", minimum=1
+        )
+        self.channels = channels
+        self.attention_channels = attention_channels
+        self.query = nn.Conv3d(channels, attention_channels, kernel_size=1)
+        self.key = nn.Conv3d(channels, attention_channels, kernel_size=1)
+        self.value = nn.Conv3d(channels, attention_channels, kernel_size=1)
+        self.output = nn.Conv3d(attention_channels, channels, kernel_size=1)
+        self.gamma = nn.Parameter(torch.zeros(()))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Return the input plus its learned non-local attention update."""
+        if not isinstance(x, torch.Tensor):
+            raise TypeError("x must be a PyTorch tensor")
+        if x.ndim != 5 or any(size == 0 for size in x.shape):
+            raise ValueError("x must have nonempty shape (N, C, T, H, W)")
+        if x.shape[1] != self.channels:
+            raise ValueError(f"x must contain {self.channels} channels")
+        if not x.is_floating_point():
+            raise TypeError("x must contain floating-point values")
+
+        n, _, time, height, width = x.shape
+        query = self.query(x).flatten(2).transpose(1, 2)
+        key = self.key(x).flatten(2)
+        value = self.value(x).flatten(2).transpose(1, 2)
+        scores = query @ key / self.attention_channels**0.5
+        weights = torch.softmax(scores, dim=-1)
+        attended = weights @ value
+        attended_features = attended.transpose(1, 2).reshape(
+            n, self.attention_channels, time, height, width
+        )
+        projected = self.output(attended_features)
+        return x + self.gamma * projected
 
 
 def average_clip_scores(scores: torch.Tensor) -> torch.Tensor:
