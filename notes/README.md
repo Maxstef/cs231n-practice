@@ -92,6 +92,17 @@ they are not copies of Stanford lecture slides.
 - [Instance and panoptic segmentation](09-segmentation/instance-and-panoptic-segmentation.md)
 - [Visualizing and understanding vision models](09-segmentation/visualizing-and-understanding-vision-models.md)
 
+### Video understanding
+
+- [Video representations, sampling, and fusion](10-video-understanding/video-representations-sampling-and-fusion.md)
+- [3D convolution and video CNNs](10-video-understanding/3d-convolution-and-video-cnns.md)
+- [Inflating 2D networks into I3D](10-video-understanding/inflating-2d-networks-to-i3d.md)
+- [Measuring motion with optical flow](10-video-understanding/optical-flow.md)
+- [Motion and two-stream networks](10-video-understanding/motion-and-two-stream-networks.md)
+- [Long-range video modeling](10-video-understanding/long-range-video-modeling.md)
+- [Video tasks and modern systems](10-video-understanding/video-tasks-and-modern-systems.md)
+- [Multimodal and audio-visual video understanding](10-video-understanding/multimodal-audio-visual-understanding.md)
+
 ## Conventions
 
 - Equations and diagrams should be recreated rather than copied from slides.
