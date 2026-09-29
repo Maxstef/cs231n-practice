@@ -106,6 +106,7 @@ they are not copies of Stanford lecture slides.
 ### Large-scale distributed training
 
 - [GPU hardware and cluster communication](11-distributed-training/gpu-hardware-and-clusters.md)
+- [GPU versus TPU](11-distributed-training/gpu-vs-tpu.md)
 - [Data parallelism, FSDP, and HSDP](11-distributed-training/data-parallelism-and-sharding.md)
 - [Context, pipeline, and tensor parallelism](11-distributed-training/model-parallelism.md)
 - [Training memory and compute efficiency](11-distributed-training/memory-and-efficiency.md)

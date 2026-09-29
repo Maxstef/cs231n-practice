@@ -40,10 +40,12 @@ and can be distributed across slower cluster boundaries.
 
 ## GPU versus TPU
 
-GPUs are widely used parallel processors with matrix-specific hardware. TPUs
-are custom accelerators designed around tensor computation and are also
-organized into large connected systems. The same central constraints apply to
-both: compute throughput, accelerator memory, and communication bandwidth.
+GPUs are broadly programmable parallel processors with specialized matrix
+hardware. TPUs are machine-learning accelerators centered on systolic matrix
+units. Both are constrained by compute, memory, and communication, but they
+make different trade-offs in flexibility, specialization, and software.
+
+See [GPU versus TPU](gpu-vs-tpu.md) for the detailed comparison.
 
 ## Key takeaway
 
