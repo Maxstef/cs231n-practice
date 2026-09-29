@@ -69,15 +69,17 @@ can be explained and implemented—not merely that its lecture was watched.
       compare input saliency, occlusion, CAM, and Grad-CAM.
 - [ ] Explore adversarial examples, feature inversion, and style transfer.
 
-## Phase 6: Remaining Spring 2025 topics
+## Phase 6: Later Spring 2025 topics
 
-- [ ] Understand video tensors, clip sampling, and temporal fusion.
-- [ ] Implement and compare 3D convolution, motion representations, and
+- [x] Understand video tensors, clip sampling, and temporal fusion.
+- [x] Implement and compare 3D convolution, motion representations, and
       two-stream video classifiers.
-- [ ] Explore long-range temporal modeling and multimodal video understanding.
-- [ ] Run a controlled video-classification comparison and extract reusable
+- [x] Explore long-range temporal modeling and multimodal video understanding.
+- [x] Run a controlled video-classification comparison and extract reusable
       utilities.
-- [ ] Large-scale distributed training.
+- [x] Study large-scale distributed training conceptually: accelerator and
+      cluster hardware, distributed parallelism, memory trade-offs, and
+      utilization.
 - [ ] Self-supervised and contrastive learning.
 - [ ] Variational autoencoders, GANs, and autoregressive models.
 - [ ] Diffusion models.

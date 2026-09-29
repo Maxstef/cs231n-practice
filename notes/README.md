@@ -103,6 +103,13 @@ they are not copies of Stanford lecture slides.
 - [Video tasks and modern systems](10-video-understanding/video-tasks-and-modern-systems.md)
 - [Multimodal and audio-visual video understanding](10-video-understanding/multimodal-audio-visual-understanding.md)
 
+### Large-scale distributed training
+
+- [GPU hardware and cluster communication](11-distributed-training/gpu-hardware-and-clusters.md)
+- [Data parallelism, FSDP, and HSDP](11-distributed-training/data-parallelism-and-sharding.md)
+- [Context, pipeline, and tensor parallelism](11-distributed-training/model-parallelism.md)
+- [Training memory and compute efficiency](11-distributed-training/memory-and-efficiency.md)
+
 ## Conventions
 
 - Equations and diagrams should be recreated rather than copied from slides.
