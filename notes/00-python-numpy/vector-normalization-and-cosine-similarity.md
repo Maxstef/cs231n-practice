@@ -47,9 +47,7 @@ to the same unit vector.
 Cosine similarity compares the angle between two vectors:
 
 $$
-\mathrm{cosine}(a,b)
-=
-\frac{a^T b}{\lVert a \rVert_2\lVert b \rVert_2}.
+\mathrm{cosine}(a,b)=\frac{a^T b}{\lVert a \rVert_2\lVert b \rVert_2}.
 $$
 
 If both vectors have already been normalized, the denominator is 1, so cosine
@@ -82,9 +80,7 @@ For normalized vectors, cosine similarity and Euclidean distance produce the
 same neighbor ordering because
 
 $$
-\lVert \hat{a}-\hat{b} \rVert_2^2
-=
-2-2\hat{a}^T\hat{b}.
+\lVert \hat{a}-\hat{b} \rVert_2^2=2-2\hat{a}^T\hat{b}.
 $$
 
 Higher cosine similarity therefore means smaller Euclidean distance on the unit
