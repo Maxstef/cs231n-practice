@@ -12,6 +12,10 @@ from cs231n_practice.classifiers.linear import (
     train_linear_classifier,
 )
 from cs231n_practice.classifiers.neural_net import TwoLayerNet
+from cs231n_practice.classifiers.self_supervised import (
+    RotationPredictionModel,
+    SmallEncoder,
+)
 from cs231n_practice.classifiers.transformer import TransformerSequenceClassifier
 from cs231n_practice.classifiers.video import (
     Small3DVideoClassifier,
@@ -21,7 +25,9 @@ from cs231n_practice.classifiers.vision_transformer import TinyVisionTransformer
 
 __all__ = [
     "KNearestNeighbor",
+    "RotationPredictionModel",
     "SmallConvNet",
+    "SmallEncoder",
     "Small3DVideoClassifier",
     "TrainingResult",
     "TwoLayerNet",
