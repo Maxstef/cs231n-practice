@@ -1,9 +1,10 @@
 """Utilities for self-supervised pretraining and representation evaluation."""
 
-from numbers import Integral
+from numbers import Integral, Real
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 
 def _positive_integer(value: int, name: str) -> int:
@@ -14,6 +15,105 @@ def _positive_integer(value: int, name: str) -> int:
     if value <= 0:
         raise ValueError(f"{name} must be positive")
     return value
+
+
+def _positive_float(value: float, name: str) -> float:
+    """Validate a positive finite floating-point value."""
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise TypeError(f"{name} must be numeric")
+    value = float(value)
+    if not torch.isfinite(torch.tensor(value)) or value <= 0.0:
+        raise ValueError(f"{name} must be positive and finite")
+    return value
+
+
+def _embedding_matrix(embeddings: torch.Tensor) -> torch.Tensor:
+    """Validate and return a nonempty floating-point ``(N, D)`` matrix."""
+    if not isinstance(embeddings, torch.Tensor):
+        raise TypeError("embeddings must be a PyTorch tensor")
+    if embeddings.ndim != 2 or any(size == 0 for size in embeddings.shape):
+        raise ValueError("embeddings must have nonempty shape (N, D)")
+    if not embeddings.is_floating_point():
+        raise TypeError("embeddings must contain floating-point values")
+    return embeddings
+
+
+def l2_normalize(
+    embeddings: torch.Tensor,
+    epsilon: float = 1e-12,
+) -> torch.Tensor:
+    """Normalize each embedding row to unit L2 length.
+
+    A zero row remains zero because its denominator is clamped to ``epsilon``.
+    """
+    embeddings = _embedding_matrix(embeddings)
+    epsilon = _positive_float(epsilon, "epsilon")
+    norms = torch.linalg.vector_norm(embeddings, ord=2, dim=1, keepdim=True)
+    return embeddings / norms.clamp_min(epsilon)
+
+
+def pairwise_cosine_similarity(embeddings: torch.Tensor) -> torch.Tensor:
+    """Return the ``(N, N)`` cosine-similarity matrix between embedding rows."""
+    normalized = l2_normalize(embeddings)
+    return normalized @ normalized.transpose(0, 1)
+
+
+def positive_pair_indices(
+    number_of_embeddings: int,
+    *,
+    device: torch.device | str | None = None,
+) -> torch.Tensor:
+    """Return positive columns for embeddings ordered as ``[view_a; view_b]``.
+
+    ``number_of_embeddings`` must equal ``2N`` for at least two source
+    examples. The result maps every view in the first half to the corresponding
+    view in the second half and vice versa.
+    """
+    number_of_embeddings = _positive_integer(
+        number_of_embeddings, "number_of_embeddings"
+    )
+    if number_of_embeddings < 4 or number_of_embeddings % 2 != 0:
+        raise ValueError(
+            "number_of_embeddings must be even and represent at least two sources"
+        )
+    number_of_sources = number_of_embeddings // 2
+    indices = torch.arange(number_of_embeddings, device=device)
+    return (indices + number_of_sources) % number_of_embeddings
+
+
+def info_nce_loss(
+    embeddings: torch.Tensor,
+    temperature: float = 0.2,
+) -> torch.Tensor:
+    """Return symmetric InfoNCE for embeddings ordered as ``[view_a; view_b]``.
+
+    Rows are L2-normalized before their pairwise similarities are calculated.
+    Every embedding is an anchor once. Its other augmented view is the target,
+    its self-similarity is excluded, and all remaining rows are negatives.
+    """
+    embeddings = _embedding_matrix(embeddings)
+    temperature = _positive_float(temperature, "temperature")
+    targets = positive_pair_indices(
+        embeddings.shape[0],
+        device=embeddings.device,
+    )
+
+    logits = pairwise_cosine_similarity(embeddings) / temperature
+    self_mask = torch.eye(
+        embeddings.shape[0],
+        dtype=torch.bool,
+        device=embeddings.device,
+    )
+    logits = logits.masked_fill(self_mask, -torch.inf)
+    return F.cross_entropy(logits, targets)
+
+
+def nt_xent_loss(
+    embeddings: torch.Tensor,
+    temperature: float = 0.2,
+) -> torch.Tensor:
+    """Return normalized temperature-scaled cross-entropy (InfoNCE)."""
+    return info_nce_loss(embeddings, temperature)
 
 
 def make_rotation_batch(

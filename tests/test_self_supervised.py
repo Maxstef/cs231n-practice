@@ -5,8 +5,105 @@ from torch import nn
 from cs231n_practice.self_supervised import (
     extract_features,
     freeze_encoder,
+    info_nce_loss,
+    l2_normalize,
     make_rotation_batch,
+    nt_xent_loss,
+    pairwise_cosine_similarity,
+    positive_pair_indices,
 )
+
+
+def test_l2_normalize_normalizes_rows_and_preserves_zero() -> None:
+    embeddings = torch.tensor([[3.0, 4.0], [6.0, 8.0], [0.0, 0.0]])
+
+    normalized = l2_normalize(embeddings)
+
+    expected = torch.tensor([[0.6, 0.8], [0.6, 0.8], [0.0, 0.0]])
+    torch.testing.assert_close(normalized, expected)
+    torch.testing.assert_close(
+        normalized.norm(dim=1), torch.tensor([1.0, 1.0, 0.0])
+    )
+
+
+def test_pairwise_cosine_similarity_is_symmetric_and_scale_invariant() -> None:
+    embeddings = torch.tensor([[3.0, 4.0], [4.0, -3.0], [-3.0, -4.0]])
+
+    similarities = pairwise_cosine_similarity(embeddings)
+    scaled_similarities = pairwise_cosine_similarity(
+        embeddings * torch.tensor([[2.0], [5.0], [0.5]])
+    )
+
+    expected = torch.tensor([[1.0, 0.0, -1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 1.0]])
+    torch.testing.assert_close(similarities, expected)
+    torch.testing.assert_close(similarities, similarities.T)
+    torch.testing.assert_close(scaled_similarities, similarities)
+
+
+def test_positive_pair_indices_maps_both_view_directions() -> None:
+    torch.testing.assert_close(
+        positive_pair_indices(8),
+        torch.tensor([4, 5, 6, 7, 0, 1, 2, 3]),
+    )
+
+
+def test_info_nce_matches_explicit_loop_and_nt_xent_name() -> None:
+    torch.manual_seed(23)
+    embeddings = torch.randn(10, 6)
+    temperature = 0.3
+    similarities = pairwise_cosine_similarity(embeddings)
+    targets = positive_pair_indices(len(embeddings))
+    losses = []
+    for anchor, positive in enumerate(targets):
+        valid = torch.arange(len(embeddings)) != anchor
+        scores = similarities[anchor] / temperature
+        losses.append(
+            -scores[positive] + torch.logsumexp(scores[valid], dim=0)
+        )
+    expected = torch.stack(losses).mean()
+
+    actual = info_nce_loss(embeddings, temperature)
+
+    torch.testing.assert_close(actual, expected)
+    torch.testing.assert_close(nt_xent_loss(embeddings, temperature), actual)
+
+
+def test_info_nce_collapsed_embeddings_have_uniform_candidate_loss() -> None:
+    embeddings = torch.ones(8, 5)
+
+    loss = info_nce_loss(embeddings)
+
+    expected = torch.log(torch.tensor(7.0))
+    torch.testing.assert_close(loss, expected)
+
+
+def test_info_nce_propagates_finite_embedding_gradients() -> None:
+    torch.manual_seed(29)
+    embeddings = torch.randn(8, 5, requires_grad=True)
+
+    loss = info_nce_loss(embeddings)
+    loss.backward()
+
+    assert embeddings.grad is not None
+    assert torch.isfinite(embeddings.grad).all()
+    assert embeddings.grad.abs().sum() > 0
+
+
+def test_contrastive_helpers_reject_invalid_arguments() -> None:
+    with pytest.raises(ValueError, match="shape"):
+        l2_normalize(torch.zeros(2, 3, 4))
+    with pytest.raises(TypeError, match="floating-point"):
+        pairwise_cosine_similarity(torch.ones(4, 3, dtype=torch.int64))
+    with pytest.raises(ValueError, match="epsilon"):
+        l2_normalize(torch.ones(4, 3), epsilon=0.0)
+    with pytest.raises(ValueError, match="at least two"):
+        positive_pair_indices(2)
+    with pytest.raises(ValueError, match="even"):
+        positive_pair_indices(5)
+    with pytest.raises(ValueError, match="temperature"):
+        info_nce_loss(torch.randn(4, 3), temperature=0.0)
+    with pytest.raises(TypeError, match="numeric"):
+        info_nce_loss(torch.randn(4, 3), temperature=True)
 
 
 def test_make_rotation_batch_matches_every_sampled_target() -> None:
