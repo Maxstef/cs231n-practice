@@ -1,9 +1,13 @@
 import pytest
 import torch
+from torch import nn
 
 from cs231n_practice.classifiers.self_supervised import (
+    FineTunedClassifier,
+    ProjectionHead,
     RotationPredictionModel,
     SmallEncoder,
+    SmallSimCLR,
 )
 
 
@@ -58,3 +62,43 @@ def test_small_encoder_rejects_invalid_images() -> None:
 def test_rotation_model_rejects_invalid_number_of_rotations() -> None:
     with pytest.raises(ValueError, match="positive"):
         RotationPredictionModel(num_rotations=0)
+
+
+def test_projection_head_returns_requested_width() -> None:
+    head = ProjectionHead(input_dim=12, hidden_dim=9, projection_dim=5)
+
+    projections = head(torch.randn(7, 12))
+
+    assert projections.shape == (7, 5)
+
+
+def test_small_simclr_returns_representations_and_projections() -> None:
+    model = SmallSimCLR(feature_dim=20, projection_hidden_dim=16, projection_dim=6)
+    images = torch.randn(4, 3, 16, 16, requires_grad=True)
+
+    representations, projections = model(images)
+    projections.square().mean().backward()
+
+    assert representations.shape == (4, 20)
+    assert projections.shape == (4, 6)
+    assert images.grad is not None
+    assert all(parameter.grad is not None for parameter in model.parameters())
+
+
+def test_fine_tuned_classifier_uses_encoder_feature_width() -> None:
+    encoder = SmallEncoder(feature_dim=18)
+    model = FineTunedClassifier(encoder, num_classes=7)
+
+    scores = model(torch.randn(3, 3, 12, 12))
+
+    assert scores.shape == (3, 7)
+    assert model.encoder is encoder
+
+
+def test_self_supervised_models_reject_invalid_arguments() -> None:
+    with pytest.raises(ValueError, match="shape"):
+        ProjectionHead(input_dim=4)(torch.zeros(2, 5))
+    with pytest.raises(ValueError, match="feature_dim"):
+        FineTunedClassifier(nn.Identity())
+    with pytest.raises(ValueError, match="positive"):
+        SmallSimCLR(projection_dim=0)

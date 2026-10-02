@@ -1,5 +1,6 @@
 """Utilities for self-supervised pretraining and representation evaluation."""
 
+from collections.abc import Callable
 from numbers import Integral, Real
 
 import torch
@@ -114,6 +115,168 @@ def nt_xent_loss(
 ) -> torch.Tensor:
     """Return normalized temperature-scaled cross-entropy (InfoNCE)."""
     return info_nce_loss(embeddings, temperature)
+
+
+def make_contrastive_views(
+    images: torch.Tensor,
+    transform: Callable[[torch.Tensor], torch.Tensor],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Apply a stochastic transform twice and independently to every image.
+
+    The transform receives one image without a batch axis. Its output shape may
+    differ from the input shape, but it must be consistent across all calls.
+    """
+    if not isinstance(images, torch.Tensor):
+        raise TypeError("images must be a PyTorch tensor")
+    if images.ndim < 2 or images.shape[0] == 0:
+        raise ValueError("images must contain a nonempty batch axis")
+    if not callable(transform):
+        raise TypeError("transform must be callable")
+
+    views_a = [transform(image) for image in images]
+    views_b = [transform(image) for image in images]
+    outputs = (*views_a, *views_b)
+    if not all(isinstance(view, torch.Tensor) for view in outputs):
+        raise TypeError("transform must return a PyTorch tensor")
+    reference_shape = views_a[0].shape
+    if any(view.shape != reference_shape for view in outputs):
+        raise ValueError("transform must return one consistent output shape")
+    return torch.stack(views_a), torch.stack(views_b)
+
+
+def simclr_loss(
+    model: nn.Module,
+    view_a: torch.Tensor,
+    view_b: torch.Tensor,
+    temperature: float = 0.2,
+) -> torch.Tensor:
+    """Return InfoNCE for two already prepared view batches.
+
+    The model must return ``(representations, projections)``. Input
+    normalization and augmentation remain the caller's responsibility.
+    """
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    if not isinstance(view_a, torch.Tensor) or not isinstance(view_b, torch.Tensor):
+        raise TypeError("view_a and view_b must be PyTorch tensors")
+    if view_a.ndim < 1 or view_b.ndim < 1 or view_a.shape[0] == 0:
+        raise ValueError("views must contain nonempty batch axes")
+    if view_a.shape[0] != view_b.shape[0]:
+        raise ValueError("view_a and view_b batch sizes must match")
+
+    output_a = model(view_a)
+    output_b = model(view_b)
+    if (
+        not isinstance(output_a, tuple)
+        or not isinstance(output_b, tuple)
+        or len(output_a) != 2
+        or len(output_b) != 2
+    ):
+        raise TypeError("model must return (representations, projections)")
+    projections_a = _embedding_matrix(output_a[1])
+    projections_b = _embedding_matrix(output_b[1])
+    if projections_a.shape != projections_b.shape:
+        raise ValueError("both projection batches must have the same shape")
+    projections = torch.cat((projections_a, projections_b), dim=0)
+    return info_nce_loss(projections, temperature)
+
+
+@torch.no_grad()
+def contrastive_similarity_metrics(
+    projections: torch.Tensor,
+) -> tuple[float, float]:
+    """Return mean positive and negative cosine similarities for ``[A; B]``."""
+    projections = _embedding_matrix(projections)
+    number_of_embeddings = projections.shape[0]
+    positives = positive_pair_indices(
+        number_of_embeddings,
+        device=projections.device,
+    )
+    rows = torch.arange(number_of_embeddings, device=projections.device)
+    similarities = pairwise_cosine_similarity(projections)
+    excluded = torch.eye(
+        number_of_embeddings,
+        dtype=torch.bool,
+        device=projections.device,
+    )
+    excluded[rows, positives] = True
+    positive_similarity = similarities[rows, positives].mean()
+    negative_similarity = similarities[~excluded].mean()
+    return positive_similarity.item(), negative_similarity.item()
+
+
+def train_linear_probe(
+    train_features: torch.Tensor,
+    train_labels: torch.Tensor,
+    evaluation_features: torch.Tensor,
+    evaluation_labels: torch.Tensor,
+    *,
+    num_classes: int,
+    epochs: int = 50,
+    batch_size: int = 128,
+    learning_rate: float = 5e-2,
+    device: torch.device | str = "cpu",
+    seed: int = 0,
+) -> tuple[nn.Linear, dict[str, list[float]]]:
+    """Train a linear classifier on fixed features and report epoch accuracies."""
+    train_features = _embedding_matrix(train_features)
+    evaluation_features = _embedding_matrix(evaluation_features)
+    if train_features.shape[1] != evaluation_features.shape[1]:
+        raise ValueError("train and evaluation feature dimensions must match")
+    for labels, features, name in (
+        (train_labels, train_features, "train_labels"),
+        (evaluation_labels, evaluation_features, "evaluation_labels"),
+    ):
+        if not isinstance(labels, torch.Tensor):
+            raise TypeError(f"{name} must be a PyTorch tensor")
+        if labels.ndim != 1 or labels.shape[0] != features.shape[0]:
+            raise ValueError(f"{name} must have shape ({features.shape[0]},)")
+        if labels.dtype != torch.long:
+            raise TypeError(f"{name} must have dtype torch.long")
+
+    num_classes = _positive_integer(num_classes, "num_classes")
+    epochs = _positive_integer(epochs, "epochs")
+    batch_size = _positive_integer(batch_size, "batch_size")
+    learning_rate = _positive_float(learning_rate, "learning_rate")
+    if isinstance(seed, bool) or not isinstance(seed, Integral):
+        raise TypeError("seed must be an integer")
+    device = torch.device(device)
+
+    with torch.random.fork_rng():
+        torch.manual_seed(int(seed))
+        head = nn.Linear(train_features.shape[1], num_classes)
+    head = head.to(device)
+    optimizer = torch.optim.Adam(head.parameters(), lr=learning_rate)
+    loader = torch.utils.data.DataLoader(
+        torch.utils.data.TensorDataset(train_features, train_labels),
+        batch_size=batch_size,
+        shuffle=True,
+        generator=torch.Generator().manual_seed(int(seed)),
+    )
+    train_features_device = train_features.to(device)
+    evaluation_features_device = evaluation_features.to(device)
+    history = {"train_accuracy": [], "evaluation_accuracy": []}
+
+    for _ in range(epochs):
+        head.train()
+        for feature_batch, label_batch in loader:
+            logits = head(feature_batch.to(device))
+            loss = F.cross_entropy(logits, label_batch.to(device))
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+        head.eval()
+        with torch.no_grad():
+            train_predictions = head(train_features_device).argmax(dim=1).cpu()
+            evaluation_predictions = head(evaluation_features_device).argmax(dim=1).cpu()
+        history["train_accuracy"].append(
+            (train_predictions == train_labels.cpu()).float().mean().item()
+        )
+        history["evaluation_accuracy"].append(
+            (evaluation_predictions == evaluation_labels.cpu()).float().mean().item()
+        )
+    return head.cpu(), history
 
 
 def make_rotation_batch(

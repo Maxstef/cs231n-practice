@@ -3,14 +3,18 @@ import torch
 from torch import nn
 
 from cs231n_practice.self_supervised import (
+    contrastive_similarity_metrics,
     extract_features,
     freeze_encoder,
     info_nce_loss,
     l2_normalize,
+    make_contrastive_views,
     make_rotation_batch,
     nt_xent_loss,
     pairwise_cosine_similarity,
     positive_pair_indices,
+    simclr_loss,
+    train_linear_probe,
 )
 
 
@@ -104,6 +108,75 @@ def test_contrastive_helpers_reject_invalid_arguments() -> None:
         info_nce_loss(torch.randn(4, 3), temperature=0.0)
     with pytest.raises(TypeError, match="numeric"):
         info_nce_loss(torch.randn(4, 3), temperature=True)
+
+
+def test_make_contrastive_views_calls_transform_twice_per_image() -> None:
+    images = torch.arange(3 * 2, dtype=torch.float32).reshape(3, 2)
+    calls = []
+
+    def transform(image: torch.Tensor) -> torch.Tensor:
+        calls.append(len(calls))
+        return image + calls[-1]
+
+    view_a, view_b = make_contrastive_views(images, transform)
+
+    assert len(calls) == 6
+    torch.testing.assert_close(view_a, images + torch.tensor([[0], [1], [2]]))
+    torch.testing.assert_close(view_b, images + torch.tensor([[3], [4], [5]]))
+
+
+def test_simclr_loss_propagates_through_encoder_and_projector() -> None:
+    from cs231n_practice.classifiers.self_supervised import SmallSimCLR
+
+    torch.manual_seed(31)
+    model = SmallSimCLR(feature_dim=12, projection_dim=6)
+    view_a = torch.randn(4, 3, 8, 8)
+    view_b = torch.randn(4, 3, 8, 8)
+
+    loss = simclr_loss(model, view_a, view_b)
+    loss.backward()
+
+    assert torch.isfinite(loss)
+    assert all(parameter.grad is not None for parameter in model.parameters())
+
+
+def test_contrastive_similarity_metrics_separates_positive_and_negative_pairs() -> None:
+    projections = torch.tensor([
+        [1.0, 0.0],
+        [0.0, 1.0],
+        [1.0, 0.0],
+        [0.0, 1.0],
+    ])
+
+    positive, negative = contrastive_similarity_metrics(projections)
+
+    assert positive == pytest.approx(1.0)
+    assert negative == pytest.approx(0.0)
+
+
+def test_train_linear_probe_learns_separable_fixed_features() -> None:
+    train_features = torch.tensor([
+        [-2.0, -1.0], [-1.0, -2.0], [-1.5, -1.5],
+        [2.0, 1.0], [1.0, 2.0], [1.5, 1.5],
+    ])
+    train_labels = torch.tensor([0, 0, 0, 1, 1, 1])
+    evaluation_features = torch.tensor([[-1.0, -1.0], [1.0, 1.0]])
+    evaluation_labels = torch.tensor([0, 1])
+
+    head, history = train_linear_probe(
+        train_features,
+        train_labels,
+        evaluation_features,
+        evaluation_labels,
+        num_classes=2,
+        epochs=20,
+        learning_rate=0.1,
+        seed=5,
+    )
+
+    assert isinstance(head, nn.Linear)
+    assert history["train_accuracy"][-1] == pytest.approx(1.0)
+    assert history["evaluation_accuracy"][-1] == pytest.approx(1.0)
 
 
 def test_make_rotation_batch_matches_every_sampled_target() -> None:
