@@ -10,6 +10,7 @@ they are not copies of Stanford lecture slides.
 
 - [Reordering array and tensor axes](00-python-numpy/axis-reordering.md)
 - [Reshaping and flattening](00-python-numpy/reshaping-and-flattening.md)
+- [PyTorch shape operations and gather](00-python-numpy/pytorch-shapes-and-gather.md)
 - [Broadcasting and new axes](00-python-numpy/broadcasting-and-new-axes.md)
 - [Reductions and axes](00-python-numpy/reductions-and-axes.md)
 - [Vector normalization and cosine similarity](00-python-numpy/vector-normalization-and-cosine-similarity.md)
