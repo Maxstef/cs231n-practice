@@ -39,6 +39,203 @@ def _embedding_matrix(embeddings: torch.Tensor) -> torch.Tensor:
     return embeddings
 
 
+def patchify(images: torch.Tensor, patch_size: int) -> torch.Tensor:
+    """Convert NCHW images into row-major sequences of flattened patches.
+
+    An input with shape ``(N, C, H, W)`` becomes
+    ``(N, (H/P) * (W/P), C * P * P)`` for patch size ``P``.
+    """
+    if not isinstance(images, torch.Tensor):
+        raise TypeError("images must be a PyTorch tensor")
+    if images.ndim != 4 or any(size == 0 for size in images.shape):
+        raise ValueError("images must have nonempty shape (N, C, H, W)")
+    patch_size = _positive_integer(patch_size, "patch_size")
+    number_images, channels, height, width = images.shape
+    if height % patch_size != 0 or width % patch_size != 0:
+        raise ValueError("image height and width must be divisible by patch_size")
+
+    windows = images.unfold(2, patch_size, patch_size).unfold(
+        3, patch_size, patch_size
+    )
+    return windows.permute(0, 2, 3, 1, 4, 5).reshape(
+        number_images,
+        -1,
+        channels * patch_size * patch_size,
+    )
+
+
+def unpatchify(
+    patches: torch.Tensor,
+    patch_size: int,
+    channels: int,
+    image_height: int,
+    image_width: int,
+) -> torch.Tensor:
+    """Restore row-major flattened patches to an NCHW image batch."""
+    if not isinstance(patches, torch.Tensor):
+        raise TypeError("patches must be a PyTorch tensor")
+    if patches.ndim != 3 or any(size == 0 for size in patches.shape):
+        raise ValueError("patches must have nonempty shape (N, L, patch_dim)")
+    patch_size = _positive_integer(patch_size, "patch_size")
+    channels = _positive_integer(channels, "channels")
+    image_height = _positive_integer(image_height, "image_height")
+    image_width = _positive_integer(image_width, "image_width")
+    if image_height % patch_size != 0 or image_width % patch_size != 0:
+        raise ValueError("image height and width must be divisible by patch_size")
+
+    number_images, number_patches, patch_dim = patches.shape
+    grid_height = image_height // patch_size
+    grid_width = image_width // patch_size
+    if number_patches != grid_height * grid_width:
+        raise ValueError("patch count does not match the requested image grid")
+    expected_patch_dim = channels * patch_size * patch_size
+    if patch_dim != expected_patch_dim:
+        raise ValueError("patch_dim does not match channels * patch_size squared")
+
+    patch_grid = patches.reshape(
+        number_images,
+        grid_height,
+        grid_width,
+        channels,
+        patch_size,
+        patch_size,
+    )
+    return patch_grid.permute(0, 3, 1, 4, 2, 5).reshape(
+        number_images,
+        channels,
+        image_height,
+        image_width,
+    )
+
+
+def random_mask_patches(
+    patches: torch.Tensor,
+    mask_ratio: float,
+    *,
+    generator: torch.Generator | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Randomly retain a patch subset independently for every batch item.
+
+    Returns visible patches in shuffled order, a binary original-order mask,
+    original indices of kept patches, and the inverse shuffle used to restore
+    a full sequence. Mask values are zero for visible patches and one for
+    masked patches.
+    """
+    if not isinstance(patches, torch.Tensor):
+        raise TypeError("patches must be a PyTorch tensor")
+    if patches.ndim != 3 or any(size == 0 for size in patches.shape):
+        raise ValueError("patches must have nonempty shape (N, L, patch_dim)")
+    if isinstance(mask_ratio, bool) or not isinstance(mask_ratio, Real):
+        raise TypeError("mask_ratio must be numeric")
+    mask_ratio = float(mask_ratio)
+    if not torch.isfinite(torch.tensor(mask_ratio)) or not 0.0 < mask_ratio < 1.0:
+        raise ValueError("mask_ratio must be finite and strictly between 0 and 1")
+    if generator is not None and not isinstance(generator, torch.Generator):
+        raise TypeError("generator must be a torch.Generator or None")
+
+    number_images, number_patches, patch_dim = patches.shape
+    number_visible = max(1, int(number_patches * (1.0 - mask_ratio)))
+    noise_device = generator.device if generator is not None else patches.device
+    noise = torch.rand(
+        number_images,
+        number_patches,
+        generator=generator,
+        device=noise_device,
+    ).to(patches.device)
+    ids_shuffle = noise.argsort(dim=1)
+    ids_restore = ids_shuffle.argsort(dim=1)
+    ids_keep = ids_shuffle[:, :number_visible]
+    visible_patches = patches.gather(
+        1,
+        ids_keep.unsqueeze(-1).expand(-1, -1, patch_dim),
+    )
+
+    mask = torch.ones(
+        number_images,
+        number_patches,
+        dtype=torch.float32,
+        device=patches.device,
+    )
+    mask[:, :number_visible] = 0.0
+    mask = mask.gather(1, ids_restore)
+    return visible_patches, mask, ids_keep, ids_restore
+
+
+def restore_mask_tokens(
+    visible_tokens: torch.Tensor,
+    ids_restore: torch.Tensor,
+    mask_token: torch.Tensor,
+) -> torch.Tensor:
+    """Insert mask tokens and restore a shuffled token sequence to spatial order."""
+    if not isinstance(visible_tokens, torch.Tensor):
+        raise TypeError("visible_tokens must be a PyTorch tensor")
+    if visible_tokens.ndim != 3 or any(size == 0 for size in visible_tokens.shape):
+        raise ValueError("visible_tokens must have nonempty shape (N, K, D)")
+    if not isinstance(ids_restore, torch.Tensor):
+        raise TypeError("ids_restore must be a PyTorch tensor")
+    if ids_restore.ndim != 2 or ids_restore.shape[0] != visible_tokens.shape[0]:
+        raise ValueError("ids_restore must have shape (N, L)")
+    if ids_restore.dtype != torch.long:
+        raise TypeError("ids_restore must have dtype torch.long")
+    if not isinstance(mask_token, torch.Tensor):
+        raise TypeError("mask_token must be a PyTorch tensor")
+
+    number_images, number_visible, feature_dim = visible_tokens.shape
+    number_patches = ids_restore.shape[1]
+    if number_visible > number_patches:
+        raise ValueError("visible token count cannot exceed the full patch count")
+    if mask_token.shape != (1, 1, feature_dim):
+        raise ValueError(f"mask_token must have shape (1, 1, {feature_dim})")
+    if mask_token.device != visible_tokens.device:
+        raise ValueError("mask_token and visible_tokens must be on the same device")
+    if mask_token.dtype != visible_tokens.dtype:
+        raise TypeError("mask_token and visible_tokens must have the same dtype")
+
+    number_masked = number_patches - number_visible
+    mask_tokens = mask_token.expand(number_images, number_masked, feature_dim)
+    shuffled_tokens = torch.cat((visible_tokens, mask_tokens), dim=1)
+    return shuffled_tokens.gather(
+        1,
+        ids_restore.to(visible_tokens.device).unsqueeze(-1).expand(
+            -1, -1, feature_dim
+        ),
+    )
+
+
+def masked_reconstruction_loss(
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+    """Return mean squared error over only positions marked one in ``mask``."""
+    if not isinstance(predictions, torch.Tensor) or not isinstance(
+        targets, torch.Tensor
+    ):
+        raise TypeError("predictions and targets must be PyTorch tensors")
+    if predictions.ndim != 3 or predictions.shape != targets.shape:
+        raise ValueError("predictions and targets must share shape (N, L, D)")
+    if any(size == 0 for size in predictions.shape):
+        raise ValueError("predictions and targets must be nonempty")
+    if not predictions.is_floating_point() or not targets.is_floating_point():
+        raise TypeError("predictions and targets must contain floating-point values")
+    if not isinstance(mask, torch.Tensor):
+        raise TypeError("mask must be a PyTorch tensor")
+    if mask.shape != predictions.shape[:2]:
+        raise ValueError("mask must have shape (N, L)")
+    if mask.device != predictions.device or targets.device != predictions.device:
+        raise ValueError("predictions, targets, and mask must be on the same device")
+    if not bool(torch.all((mask == 0) | (mask == 1))):
+        raise ValueError("mask values must be binary")
+
+    numeric_mask = mask.to(dtype=predictions.dtype)
+    number_masked = numeric_mask.sum()
+    if number_masked.item() == 0:
+        raise ValueError("mask must select at least one position")
+    squared_error = (predictions - targets).square()
+    masked_error = squared_error * numeric_mask.unsqueeze(-1)
+    return masked_error.sum() / (number_masked * predictions.shape[-1])
+
+
 def l2_normalize(
     embeddings: torch.Tensor,
     epsilon: float = 1e-12,

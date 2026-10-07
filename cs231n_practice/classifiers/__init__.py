@@ -14,10 +14,12 @@ from cs231n_practice.classifiers.linear import (
 from cs231n_practice.classifiers.neural_net import TwoLayerNet
 from cs231n_practice.classifiers.self_supervised import (
     FineTunedClassifier,
+    MAEEncoderView,
     ProjectionHead,
     RotationPredictionModel,
     SmallEncoder,
     SmallSimCLR,
+    TinyMaskedAutoencoder,
 )
 from cs231n_practice.classifiers.transformer import TransformerSequenceClassifier
 from cs231n_practice.classifiers.video import (
@@ -29,6 +31,7 @@ from cs231n_practice.classifiers.vision_transformer import TinyVisionTransformer
 __all__ = [
     "FineTunedClassifier",
     "KNearestNeighbor",
+    "MAEEncoderView",
     "ProjectionHead",
     "RotationPredictionModel",
     "SmallConvNet",
@@ -39,6 +42,7 @@ __all__ = [
     "TwoLayerNet",
     "TransformerSequenceClassifier",
     "TwoStreamVideoClassifier",
+    "TinyMaskedAutoencoder",
     "TinyVisionTransformer",
     "classification_accuracy",
     "linear_scores",
