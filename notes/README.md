@@ -113,6 +113,13 @@ they are not copies of Stanford lecture slides.
 - [Context, pipeline, and tensor parallelism](11-distributed-training/model-parallelism.md)
 - [Training memory and compute efficiency](11-distributed-training/memory-and-efficiency.md)
 
+### Self-supervised learning
+
+- [Self-supervised learning and evaluation](12-self-supervised/self-supervised-learning-and-evaluation.md)
+- [Contrastive learning, SimCLR, and InfoNCE](12-self-supervised/contrastive-learning-simclr-and-infonce.md)
+- [Masked image modeling and MAE](12-self-supervised/masked-image-modeling-and-mae.md)
+- [MoCo, CPC, and DINO](12-self-supervised/moco-cpc-and-dino.md)
+
 ## Conventions
 
 - Equations and diagrams should be recreated rather than copied from slides.
