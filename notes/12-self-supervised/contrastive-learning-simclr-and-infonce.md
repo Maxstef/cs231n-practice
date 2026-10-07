@@ -70,10 +70,16 @@ The anchor itself is excluded from the denominator. SimCLR averages this loss
 over all $2N$ views, so every view acts as an anchor and the two directions of
 each positive pair are both trained.
 
-For views ordered as `[view_a; view_b]`, the positive mapping is
+For views ordered as `[view_a; view_b]`, indices in the first half satisfy
 
 $$
-p(i)=\begin{cases}i+N, & 0\le i<N,\\ i-N, & N\le i<2N.\end{cases}
+p(i)=i+N, \qquad 0\le i<N,
+$$
+
+while indices in the second half satisfy
+
+$$
+p(i)=i-N, \qquad N\le i<2N.
 $$
 
 The $2N\times2N$ similarity matrix contains self-similarities on its diagonal,
