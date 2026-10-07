@@ -73,11 +73,7 @@ each positive pair are both trained.
 For views ordered as `[view_a; view_b]`, the positive mapping is
 
 $$
-p(i)=
-\begin{cases}
-i+N, & 0\le i<N,\\
-i-N, & N\le i<2N.
-\end{cases}
+p(i)=\begin{cases}i+N, & 0\le i<N,\\ i-N, & N\le i<2N.\end{cases}
 $$
 
 The $2N\times2N$ similarity matrix contains self-similarities on its diagonal,
