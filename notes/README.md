@@ -120,6 +120,13 @@ they are not copies of Stanford lecture slides.
 - [Masked image modeling and MAE](12-self-supervised/masked-image-modeling-and-mae.md)
 - [MoCo, CPC, and DINO](12-self-supervised/moco-cpc-and-dino.md)
 
+### Generative models
+
+- [Generative models and likelihood](13-generative-models/generative-models-and-likelihood.md)
+- [Autoregressive generative models](13-generative-models/autoregressive-generative-models.md)
+- [Autoencoders and variational autoencoders](13-generative-models/autoencoders-and-variational-autoencoders.md)
+- [VAE ELBO and reparameterization](13-generative-models/vae-elbo-and-reparameterization.md)
+
 ## Conventions
 
 - Equations and diagrams should be recreated rather than copied from slides.
