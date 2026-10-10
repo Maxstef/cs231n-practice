@@ -7,8 +7,11 @@ For a sequence $x=(x_1,\ldots,x_T)$:
 
 $$
 p(x)=p(x_1)\prod_{t=2}^{T}p(x_t\mid x_1,\ldots,x_{t-1})
-=\prod_{t=1}^{T}p(x_t\mid x_{<t}).
+=\prod_{t=1}^{T}p(x_t\mid x_{1:t-1}).
 $$
+
+Here $x_{1:t-1}$ means all values from position $1$ through $t-1$. For $t=1$,
+that history is empty, so the first factor is simply $p(x_1)$.
 
 Each factor asks a simpler question: given the values already observed, what
 should come next?
