@@ -58,27 +58,17 @@ image density modeling difficult.
 
 ## Maximum likelihood estimation
 
-Given independent training examples $x^{(1)},\ldots,x^{(N)}$, maximum
-likelihood chooses parameters that make the observed data probable:
-
-$$
-\theta^*=\arg\max_\theta\prod_{i=1}^{N}p_\theta(x^{(i)}).
-$$
-
-Taking logs changes the product into a sum without changing the optimum:
-
-$$
-\theta^*=\arg\max_\theta\sum_{i=1}^{N}\log p_\theta(x^{(i)}).
-$$
-
-In code, we usually minimize the **negative log-likelihood**:
+Maximum likelihood chooses parameters that make the observed training data
+probable. In practice, this is usually implemented by minimizing average
+negative log-likelihood:
 
 $$
 \mathcal{L}_{NLL}=-\frac{1}{N}\sum_{i=1}^{N}\log p_\theta(x^{(i)}).
 $$
 
-This is optimized with gradient descent. Equivalently, one could maximize log
-likelihood with gradient ascent.
+See [Maximum likelihood estimation](maximum-likelihood-estimation.md) for a
+symbol-by-symbol derivation, the log transformation, and a small Bernoulli
+example.
 
 ## A useful taxonomy
 
@@ -101,8 +91,10 @@ generally intractable, so it optimizes a lower bound.
 - A text-to-image model learns images conditioned on text.
 - A video-prediction model learns future frames conditioned on observed frames.
 
-Thus the captioning models from earlier practice are conditional generative
-models even though their outputs are discrete text sequences.
+Thus the captioning models from
+[Notebook 29 — Image captioning with RNNs](../../notebooks/29_image_captioning_with_rnn.ipynb)
+are conditional generative models even though their outputs are discrete text
+sequences.
 
 ## Source
 
