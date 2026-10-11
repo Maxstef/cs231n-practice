@@ -26,27 +26,28 @@ $-\ln(0.25)\approx1.386$ nats, or exactly $-\log_2(0.25)=2$ bits.
 
 ## Why normalize per pixel?
 
-The NLL of an autoregressive image is the sum of its pixel NLLs:
+The total NLL of an image is the sum of the NLL contributions from all its
+pixels. Equivalently, it is the negative logarithm of the probability assigned
+to the complete image:
 
 $$
-L_e(x)
-=-\sum_{t=1}^{T}\ln p(x_t\mid x_{<t}).
+E(x)=-\ln p(x)
 $$
 
 Longer images naturally have larger total NLL. Dividing by the number of
-modeled pixel values $T$ gives a length-independent average:
+modeled pixel values $T$ gives a length-independent average. Here $E(x)$ is
+the total image NLL in nats and $B(x)$ is the same quantity in bits.
 
 Nats per pixel:
 
 $$
-\frac{L_e(x)}{T}.
+E(x) / T
 $$
 
 Bits per pixel:
 
 $$
-\frac{L_e(x)}{T\ln 2}
-=\frac{L_2(x)}{T}.
+B(x) / T = E(x) / (T \ln 2)
 $$
 
 For RGB models, authors may instead report **bits per dimension**, where every

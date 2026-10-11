@@ -77,11 +77,12 @@ An **exact tractable likelihood** means that the model's log-likelihood for an
 observation can be calculated directly, apart from ordinary finite-precision
 numerical error.
 
-For an autoregressive model:
+For an autoregressive model, let $h_t$ denote all values that occur before
+position $t$. Its log-likelihood decomposes into one directly evaluable term
+per position:
 
 $$
-\log p_\theta(x)
-=\sum_{t=1}^{T}\log p_\theta(x_t\mid x_{<t}).
+\log p_\theta(x)=\sum_t \log p_\theta(x_t\mid h_t)
 $$
 
 Every conditional distribution is normalized, and the observed conditional
