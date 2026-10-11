@@ -70,6 +70,11 @@ See [Maximum likelihood estimation](maximum-likelihood-estimation.md) for a
 symbol-by-symbol derivation, the log transformation, and a small Bernoulli
 example.
 
+See [Probability, likelihood, and tractability](probability-likelihood-and-tractability.md)
+for why probability and likelihood use the same expression with different
+fixed quantities, and for the distinction between exact, approximate, and
+implicit likelihood treatments.
+
 ## A useful taxonomy
 
 | Family | Can evaluate density? | Can sample? | Main idea |

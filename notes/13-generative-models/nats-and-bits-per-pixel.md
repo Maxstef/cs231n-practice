@@ -6,19 +6,19 @@ observed data. Its unit depends only on the base of the logarithm:
 - natural logarithm, `ln`: **nats**;
 - base-2 logarithm, `log2`: **bits**.
 
-For an event with probability $p$:
+For an event with probability $p$, let $L_e$ be NLL measured with the natural
+logarithm and $L_2$ be NLL measured with the base-2 logarithm:
 
 $$
-\mathrm{NLL}_{\text{nats}}=-\ln p,
+L_e=-\ln p,
 \qquad
-\mathrm{NLL}_{\text{bits}}=-\log_2 p.
+L_2=-\log_2 p.
 $$
 
 Since $\log_2 p=\ln p/\ln 2$, conversion is straightforward:
 
 $$
-\mathrm{NLL}_{\text{bits}}
-=\frac{\mathrm{NLL}_{\text{nats}}}{\ln 2}.
+L_2=\frac{L_e}{\ln 2}.
 $$
 
 For example, an observed outcome with probability $0.25$ has
@@ -29,21 +29,24 @@ $-\ln(0.25)\approx1.386$ nats, or exactly $-\log_2(0.25)=2$ bits.
 The NLL of an autoregressive image is the sum of its pixel NLLs:
 
 $$
-\mathrm{NLL}(x)
+L_e(x)
 =-\sum_{t=1}^{T}\ln p(x_t\mid x_{<t}).
 $$
 
 Longer images naturally have larger total NLL. Dividing by the number of
 modeled pixel values $T$ gives a length-independent average:
 
-$$
-\mathrm{nats\ per\ pixel}
-=\frac{\mathrm{NLL}(x)}{T},
-$$
+Nats per pixel:
 
 $$
-\mathrm{bits\ per\ pixel}
-=\frac{\mathrm{NLL}(x)}{T\ln 2}.
+\frac{L_e(x)}{T}.
+$$
+
+Bits per pixel:
+
+$$
+\frac{L_e(x)}{T\ln 2}
+=\frac{L_2(x)}{T}.
 $$
 
 For RGB models, authors may instead report **bits per dimension**, where every
@@ -59,10 +62,11 @@ A uniform predictor for one binary value assigns probability $0.5$ to either
 outcome:
 
 $$
--\log_2(0.5)=1\text{ bit}.
+-\log_2(0.5)=1.
 $$
 
-It therefore obtains $1$ bit per binary pixel. A result below $1$ means the
+The unit on the right-hand side is one bit. It therefore obtains $1$ bit per
+binary pixel. A result below $1$ means the
 model exploits predictable structure better than this uniform baseline.
 
 Bits also have an information-coding interpretation: an ideal code based on

@@ -123,6 +123,7 @@ they are not copies of Stanford lecture slides.
 ### Generative models
 
 - [Generative models and likelihood](13-generative-models/generative-models-and-likelihood.md)
+- [Probability, likelihood, and tractability](13-generative-models/probability-likelihood-and-tractability.md)
 - [Maximum likelihood estimation](13-generative-models/maximum-likelihood-estimation.md)
 - [Autoregressive generative models](13-generative-models/autoregressive-generative-models.md)
 - [Autoencoders and variational autoencoders](13-generative-models/autoencoders-and-variational-autoencoders.md)
