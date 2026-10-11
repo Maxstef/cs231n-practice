@@ -75,6 +75,36 @@ the model would need approximately $-\log_2 p(x)$ bits to encode an outcome
 $x$. Bits per pixel is therefore the model's average idealized coding cost per
 pixel.
 
+## Connection to data storage
+
+This is the same binary information unit used in storage: eight bits make one
+byte. A good probability model can support compression because predictable
+values require fewer bits, while surprising values require more bits.
+
+Suppose an $8$ by $8$ binary image contains $64$ pixels:
+
+- storing every pixel directly requires $64$ bits, or $8$ bytes;
+- at $0.328$ bits per pixel, the ideal average cost is
+  $64 \times 0.328 \approx 21$ bits, or about $2.6$ bytes.
+
+The fractional byte is an average theoretical cost across data, not a claim
+that one ordinary file occupies part of a byte. An entropy coder such as
+arithmetic coding or range coding can turn the model's predicted probabilities
+into an actual bitstream whose average length approaches this ideal.
+
+Do not confuse likelihood-based bits per pixel with raw **bit depth**:
+
+| Quantity | Meaning |
+| --- | --- |
+| 8 bits per channel | Number of raw bits used to represent one channel value |
+| 24 bits per RGB pixel | Three raw 8-bit channel values |
+| Model bits per pixel | Average ideal coding cost based on predicted probabilities |
+
+Actual compressed files also include finite-precision effects, metadata, file
+headers, and coding overhead. The decoder must also already possess the same
+probability model; including the trained model's parameters would add further
+storage cost.
+
 ## Important limitation
 
 NLL and bits per pixel measure probability assignment, not human perceptual
