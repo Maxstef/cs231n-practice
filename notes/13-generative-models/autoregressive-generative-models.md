@@ -48,6 +48,9 @@ $1024\times1024$ RGB image contains more than three million channel values.
 Modern systems can shorten the sequence by modeling learned image tokens or
 tiles rather than individual subpixels.
 
+See [Nats and bits per pixel](nats-and-bits-per-pixel.md) for the log-likelihood
+units and their interpretation in image models.
+
 ## Ordering is both useful and artificial
 
 The chain rule is valid for any ordering, but an image has no uniquely correct
