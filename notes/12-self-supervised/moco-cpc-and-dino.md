@@ -128,3 +128,4 @@ and compute are central parts of the method.
   Transformers](https://arxiv.org/abs/2104.14294).
 - Oquab et al., [DINOv2: Learning Robust Visual Features without
   Supervision](https://arxiv.org/abs/2304.07193).
+- Yannic Kilcher Video: [DINO: Emerging Properties in Self-Supervised Vision Transformers (Facebook AI Research Explained)](https://www.youtube.com/watch?v=h3ij3F3cPIk)
