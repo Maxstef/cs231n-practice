@@ -1,8 +1,9 @@
-"""Classical image classifiers implemented during the course."""
+"""Reusable image models implemented during the course."""
 
 from cs231n_practice.classifiers.autoregressive import (
     BinaryImageAutoregressiveModel,
 )
+from cs231n_practice.classifiers.autoencoder import TinyAutoencoder
 from cs231n_practice.classifiers.cnn import SmallConvNet
 from cs231n_practice.classifiers.knn import KNearestNeighbor
 from cs231n_practice.classifiers.linear import (
@@ -47,6 +48,7 @@ __all__ = [
     "TransformerSequenceClassifier",
     "TwoStreamVideoClassifier",
     "TinyMaskedAutoencoder",
+    "TinyAutoencoder",
     "TinyVisionTransformer",
     "classification_accuracy",
     "linear_scores",

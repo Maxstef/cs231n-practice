@@ -1,4 +1,4 @@
-"""Utilities for small autoregressive generative-model experiments.
+"""Utilities for small autoregressive and autoencoder experiments.
 
 Sequence targets use shape (N, T) and model logits use shape (N, T, V),
 where V is the number of possible next values.
@@ -10,6 +10,7 @@ from numbers import Integral, Real
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.utils.data import DataLoader, TensorDataset
 
 
 _INTEGER_DTYPES = {
@@ -337,3 +338,272 @@ def sample_autoregressive_sequences(
         generated.append(current_tokens)
 
     return torch.cat(generated, dim=1)
+
+
+def _floating_image_batch(images: torch.Tensor, *, name: str) -> torch.Tensor:
+    """Validate a nonempty floating-point image batch with shape (N, H, W)."""
+    if not isinstance(images, torch.Tensor):
+        raise TypeError(f"{name} must be a PyTorch tensor")
+    if images.ndim != 3 or any(size == 0 for size in images.shape):
+        raise ValueError(f"{name} must have nonempty shape (N, H, W)")
+    if not images.is_floating_point():
+        raise TypeError(f"{name} must contain floating-point values")
+    return images
+
+
+def _model_device(model: nn.Module) -> torch.device:
+    """Return the device of the first model parameter."""
+    parameter = next(model.parameters(), None)
+    if parameter is None:
+        raise ValueError("model must contain at least one parameter")
+    return parameter.device
+
+
+def binary_reconstruction_loss(
+    reconstruction_logits: torch.Tensor,
+    targets: torch.Tensor,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    """Calculate stable Bernoulli reconstruction negative log-likelihood.
+
+    The decoder supplies one raw logit per target pixel. PyTorch combines the
+    sigmoid transformation and binary cross-entropy in a single numerically
+    stable operation.
+
+    Args:
+        reconstruction_logits: Floating-point decoder scores with the same
+            shape as targets.
+        targets: Floating-point target values, normally in the interval [0, 1].
+        reduction: Either "none", "mean", or "sum".
+
+    Returns:
+        Elementwise losses for "none" or a scalar reduced loss otherwise.
+    """
+    if not isinstance(reconstruction_logits, torch.Tensor):
+        raise TypeError("reconstruction_logits must be a PyTorch tensor")
+    if not reconstruction_logits.is_floating_point():
+        raise TypeError("reconstruction_logits must be floating-point")
+    targets = _floating_image_batch(targets, name="targets")
+    if reconstruction_logits.shape != targets.shape:
+        raise ValueError("reconstruction_logits and targets must have equal shapes")
+    if reduction not in {"none", "mean", "sum"}:
+        raise ValueError("reduction must be 'none', 'mean', or 'sum'")
+    if torch.any(targets < 0.0) or torch.any(targets > 1.0):
+        raise ValueError("targets must lie in the interval [0, 1]")
+    return F.binary_cross_entropy_with_logits(
+        reconstruction_logits,
+        targets,
+        reduction=reduction,
+    )
+
+
+def autoencoder_training_step(
+    model: nn.Module,
+    images: torch.Tensor,
+    optimizer: torch.optim.Optimizer,
+) -> float:
+    """Perform one reconstruction update and return mean pixel BCE.
+
+    Images are moved to the model's device. Gradients flow through both the
+    decoder and encoder because they are connected by the latent code.
+    """
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    if not isinstance(optimizer, torch.optim.Optimizer):
+        raise TypeError("optimizer must be a torch optimizer")
+    images = _floating_image_batch(images, name="images").to(_model_device(model))
+    model.train()
+    optimizer.zero_grad()
+    reconstruction_logits = model(images)
+    loss = binary_reconstruction_loss(reconstruction_logits, images)
+    loss.backward()
+    optimizer.step()
+    return float(loss.item())
+
+
+def train_autoencoder(
+    model: nn.Module,
+    images: torch.Tensor,
+    *,
+    epochs: int = 25,
+    batch_size: int = 128,
+    learning_rate: float = 1e-3,
+) -> list[float]:
+    """Train a deterministic autoencoder and return mean pixel BCE per epoch.
+
+    Batch losses are weighted by batch size before epoch averaging, so a
+    smaller final batch does not receive the same influence as a full batch.
+    All images must have equal spatial dimensions.
+    """
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    images = _floating_image_batch(images, name="images")
+    epochs = _positive_integer(epochs, name="epochs")
+    batch_size = _positive_integer(batch_size, name="batch_size")
+    if isinstance(learning_rate, bool) or not isinstance(learning_rate, Real):
+        raise TypeError("learning_rate must be numeric")
+    learning_rate = float(learning_rate)
+    if not math.isfinite(learning_rate) or learning_rate <= 0.0:
+        raise ValueError("learning_rate must be positive and finite")
+
+    loader = DataLoader(
+        TensorDataset(images),
+        batch_size=batch_size,
+        shuffle=True,
+    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    history = []
+    for _ in range(epochs):
+        total_loss = 0.0
+        total_images = 0
+        for (batch,) in loader:
+            batch_loss = autoencoder_training_step(model, batch, optimizer)
+            total_loss += batch_loss * batch.shape[0]
+            total_images += batch.shape[0]
+        history.append(total_loss / total_images)
+    return history
+
+
+@torch.no_grad()
+def reconstruct_images(
+    model: nn.Module,
+    images: torch.Tensor,
+) -> torch.Tensor:
+    """Return sigmoid reconstruction probabilities on the model's device."""
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    images = _floating_image_batch(images, name="images")
+    model.eval()
+    logits = model(images.to(_model_device(model)))
+    return torch.sigmoid(logits)
+
+
+@torch.no_grad()
+def encode_images(
+    model: nn.Module,
+    images: torch.Tensor,
+) -> torch.Tensor:
+    """Encode an image batch and return latent codes on the CPU."""
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    if not hasattr(model, "encode"):
+        raise ValueError("model must provide an encode method")
+    images = _floating_image_batch(images, name="images")
+    model.eval()
+    return model.encode(images.to(_model_device(model))).cpu()
+
+
+@torch.no_grad()
+def interpolate_latent_codes(
+    model: nn.Module,
+    first_image: torch.Tensor,
+    second_image: torch.Tensor,
+    *,
+    number_steps: int = 9,
+) -> torch.Tensor:
+    """Decode evenly spaced points between two encoded images.
+
+    The first and final results are reconstructions of the supplied endpoint
+    images. Intermediate results decode convex combinations of their codes.
+    """
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    if not hasattr(model, "encode") or not hasattr(model, "decode"):
+        raise ValueError("model must provide encode and decode methods")
+    number_steps = _positive_integer(number_steps, name="number_steps")
+    if number_steps < 2:
+        raise ValueError("number_steps must be at least two")
+    if not isinstance(first_image, torch.Tensor) or not isinstance(
+        second_image,
+        torch.Tensor,
+    ):
+        raise TypeError("endpoint images must be PyTorch tensors")
+    if first_image.shape != second_image.shape or first_image.ndim != 2:
+        raise ValueError("endpoint images must have equal shape (H, W)")
+    if not first_image.is_floating_point() or not second_image.is_floating_point():
+        raise TypeError("endpoint images must contain floating-point values")
+
+    device = _model_device(model)
+    model.eval()
+    endpoints = model.encode(
+        torch.stack((first_image, second_image)).to(device)
+    )
+    alpha = torch.linspace(0.0, 1.0, number_steps, device=device).unsqueeze(1)
+    latent_codes = (1.0 - alpha) * endpoints[0] + alpha * endpoints[1]
+    return torch.sigmoid(model.decode(latent_codes)).cpu()
+
+
+@torch.no_grad()
+def decode_latent_grid(
+    model: nn.Module,
+    observed_codes: torch.Tensor,
+    *,
+    grid_size: int = 8,
+    margin: float = 0.25,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Decode a rectangular grid around observed two-dimensional codes.
+
+    Args:
+        model: An autoencoder with a decode method.
+        observed_codes: CPU or device codes with shape (N, 2).
+        grid_size: Number of positions sampled along each latent axis.
+        margin: Nonnegative fraction by which each observed axis range is
+            extended on both sides.
+
+    Returns:
+        Decoded sigmoid probabilities with shape (grid_size squared, H, W),
+        ascending first-axis values, and ascending second-axis values. Decoded
+        images are ordered row by row from larger to smaller second-axis value,
+        matching an image grid displayed from top to bottom.
+    """
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    if not hasattr(model, "decode"):
+        raise ValueError("model must provide a decode method")
+    if not isinstance(observed_codes, torch.Tensor):
+        raise TypeError("observed_codes must be a PyTorch tensor")
+    if (
+        observed_codes.ndim != 2
+        or observed_codes.shape[0] == 0
+        or observed_codes.shape[1] != 2
+    ):
+        raise ValueError("observed_codes must have nonempty shape (N, 2)")
+    if not observed_codes.is_floating_point():
+        raise TypeError("observed_codes must contain floating-point values")
+    grid_size = _positive_integer(grid_size, name="grid_size")
+    if grid_size < 2:
+        raise ValueError("grid_size must be at least two")
+    if isinstance(margin, bool) or not isinstance(margin, Real):
+        raise TypeError("margin must be numeric")
+    margin = float(margin)
+    if not math.isfinite(margin) or margin < 0.0:
+        raise ValueError("margin must be nonnegative and finite")
+
+    codes = observed_codes.detach().cpu()
+    minimum = codes.min(dim=0).values
+    maximum = codes.max(dim=0).values
+    span = maximum - minimum
+    first_axis = torch.linspace(
+        minimum[0] - margin * span[0],
+        maximum[0] + margin * span[0],
+        grid_size,
+    )
+    second_axis = torch.linspace(
+        minimum[1] - margin * span[1],
+        maximum[1] + margin * span[1],
+        grid_size,
+    )
+    grid_second, grid_first = torch.meshgrid(
+        second_axis.flip(0),
+        first_axis,
+        indexing="ij",
+    )
+    grid_codes = torch.stack(
+        (grid_first.reshape(-1), grid_second.reshape(-1)),
+        dim=1,
+    )
+    model.eval()
+    decoded = torch.sigmoid(
+        model.decode(grid_codes.to(_model_device(model)))
+    ).cpu()
+    return decoded, first_axis, second_axis
