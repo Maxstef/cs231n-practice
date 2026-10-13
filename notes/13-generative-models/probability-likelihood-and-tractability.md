@@ -93,6 +93,60 @@ sampling estimate is required.
 It means we can exactly evaluate the probability or density defined by this
 particular model.
 
+## Marginal likelihood with a hidden variable
+
+A latent-variable model describes a visible observation $x$ together with an
+unobserved explanation $z$:
+
+$$
+p_\theta(x,z)=p(z)p_\theta(x\mid z).
+$$
+
+Because only $x$ is observed, its probability must include every way the
+hidden variable could have produced it. For a discrete $z$, imagine only two
+possible explanations:
+
+$$
+p_\theta(x)
+=p_\theta(x\mid z_1)p(z_1)
++p_\theta(x\mid z_2)p(z_2).
+$$
+
+Neither explanation is known to be the correct one, so discarding either would
+discard valid probability mass. With a continuous latent variable, there are
+infinitely many possible values and the sum becomes an integral:
+
+$$
+p_\theta(x)=\int p_\theta(x\mid z)p(z)\,dz.
+$$
+
+This is called **marginalization** because $z$ disappears from the result. The
+resulting $p_\theta(x)$ is the **marginal likelihood**, or **evidence**, of the
+observed data.
+
+Exact marginal likelihood means evaluating the complete sum or integral under
+the model, rather than selecting one likely latent explanation or averaging a
+small number of random samples.
+
+## Why evaluate likelihood?
+
+Likelihood gives a common objective for fitting and assessing a probabilistic
+generative model:
+
+- maximum-likelihood training adjusts parameters to increase probability
+  assigned to training observations;
+- evaluation on held-out data checks whether probability assignment
+  generalizes beyond the training set;
+- likelihood can support compression, uncertainty scoring, and some anomaly
+  detection methods;
+- normalized likelihood lets us compare probability assignment when data
+  representation and measurement conventions match.
+
+We do not always need to print exact likelihood as a final metric. However, it
+is the ideal probabilistic objective from which objectives such as the VAE
+ELBO are derived. When exact evaluation is intractable, we need a tractable
+bound or estimator instead.
+
 ## When exact likelihood is unavailable
 
 There is no single category called “non-exact likelihood.” Several different
@@ -116,6 +170,10 @@ The model defines this likelihood, but the integral is usually intractable.
 Training therefore maximizes the evidence lower bound (ELBO), not the exact
 log-likelihood itself. This is different from saying that the VAE has no
 likelihood.
+
+See [VAE ELBO and reparameterization](vae-elbo-and-reparameterization.md) for
+how the approximate posterior converts this intractable objective into the
+trainable ELBO.
 
 ## Comparisons require care
 

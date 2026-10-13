@@ -1,14 +1,58 @@
 # VAE ELBO and reparameterization
 
+For the distinction between probability and likelihood, the meaning of exact
+marginal likelihood, and why latent explanations must be marginalized, first
+see [Probability, likelihood, and tractability](probability-likelihood-and-tractability.md).
+
+## Prior, posterior, and approximate posterior
+
+The word **posterior** means a distribution after observing some data. In a
+VAE, the unobserved quantity is the latent code $z$ and the observation is an
+image $x$:
+
+- The **prior** $p(z)$ describes plausible latent codes before seeing an image.
+- The **true posterior** $p_\theta(z\mid x)$ describes plausible latent codes
+  after seeing a particular image.
+- The **approximate posterior** $q_\phi(z\mid x)$ is the encoder's tractable
+  approximation to the true posterior, which is generally difficult to
+  calculate exactly.
+
+For a diagonal-Gaussian encoder, $q_\phi(z\mid x)$ is described by the mean and
+variance predicted from $x$. Its **posterior mean** is the center $\mu(x)$, while
+a **posterior sample** is a random latent code drawn from the whole distribution.
+Both depend on the input image, so decoding either one is reconstruction.
+Unconditional generation instead draws $z$ from the prior and does not use the
+encoder:
+
+```text
+reconstruction: x -> approximate posterior q(z | x) -> z -> decoder
+generation:          prior p(z) -> z -> decoder
+```
+
+## Why the VAE needs a bound
+
 The VAE would ideally maximize
 
 $$
-\log p_\theta(x)=\log\int p_\theta(x,z)\,dz,
+\log p_\theta(x)
+=\log\int p_\theta(x\mid z)p(z)\,dz,
 $$
 
-but directly integrating over every possible latent $z$ is usually
-intractable. The encoder distribution $q_\phi(z\mid x)$ lets us derive a
-tractable lower bound.
+because the observed image could be explained by many unobserved latent values.
+The integral combines all of those explanations, weighted by their prior
+probability. It is usually intractable because a nonlinear neural decoder does
+not produce an integrand with a closed-form solution, and numerical integration
+becomes prohibitively expensive in a high-dimensional continuous latent space.
+
+The same marginal likelihood appears in the true posterior:
+
+$$
+p_\theta(z\mid x)
+=\frac{p_\theta(x\mid z)p(z)}{p_\theta(x)}.
+$$
+
+The encoder distribution $q_\phi(z\mid x)$ provides a tractable approximation
+to that posterior and lets us derive a trainable lower bound.
 
 ## Deriving the ELBO
 
@@ -134,6 +178,10 @@ epsilon ~ N(0,I) -> z = mu + std * epsilon
 During training, one or a few Monte Carlo samples usually approximate the
 expectation in the reconstruction term. During generation, sample $z$ directly
 from the prior and run only the decoder.
+
+## Related practice
+
+- [Notebook 56 — Variational autoencoders and the ELBO](../../notebooks/56_variational_autoencoders_and_elbo.ipynb)
 
 ## Sources
 
