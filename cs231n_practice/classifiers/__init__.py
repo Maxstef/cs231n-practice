@@ -31,6 +31,7 @@ from cs231n_practice.classifiers.video import (
     TwoStreamVideoClassifier,
 )
 from cs231n_practice.classifiers.vision_transformer import TinyVisionTransformer
+from cs231n_practice.classifiers.vae import TinyVAE
 
 __all__ = [
     "BinaryImageAutoregressiveModel",
@@ -50,6 +51,7 @@ __all__ = [
     "TinyMaskedAutoencoder",
     "TinyAutoencoder",
     "TinyVisionTransformer",
+    "TinyVAE",
     "classification_accuracy",
     "linear_scores",
     "predict_linear",

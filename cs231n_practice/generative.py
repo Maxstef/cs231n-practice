@@ -607,3 +607,269 @@ def decode_latent_grid(
         model.decode(grid_codes.to(_model_device(model)))
     ).cpu()
     return decoded, first_axis, second_axis
+
+
+def reparameterize(
+    mean: torch.Tensor,
+    log_variance: torch.Tensor,
+    epsilon: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Draw a differentiable sample from a diagonal Gaussian.
+
+    The random variable is rewritten as ``mean + std * epsilon`` so that the
+    sampling noise is independent of the learned distribution parameters.
+    Gradients can consequently flow from the sampled code into both encoder
+    outputs.
+
+    Args:
+        mean: Distribution means with shape ``(N, D)``.
+        log_variance: Logarithms of the diagonal variances, also ``(N, D)``.
+        epsilon: Optional fixed standard-normal noise with matching shape.
+            Supplying it is useful for deterministic tests; otherwise fresh
+            noise is sampled with the mean's dtype and device.
+
+    Returns:
+        Reparameterized latent codes with shape ``(N, D)``.
+    """
+    mean = _floating_latent_matrix(mean, name="mean")
+    log_variance = _floating_latent_matrix(
+        log_variance,
+        name="log_variance",
+    )
+    if mean.shape != log_variance.shape:
+        raise ValueError("mean and log_variance must have equal shapes")
+    if mean.device != log_variance.device or mean.dtype != log_variance.dtype:
+        raise ValueError("mean and log_variance must share dtype and device")
+    if epsilon is None:
+        epsilon = torch.randn_like(mean)
+    else:
+        epsilon = _floating_latent_matrix(epsilon, name="epsilon")
+        if epsilon.shape != mean.shape:
+            raise ValueError("epsilon must have the same shape as mean")
+        if epsilon.device != mean.device or epsilon.dtype != mean.dtype:
+            raise ValueError("epsilon must share the mean's dtype and device")
+
+    standard_deviation = torch.exp(0.5 * log_variance)
+    return mean + standard_deviation * epsilon
+
+
+def gaussian_kl_divergence(
+    mean: torch.Tensor,
+    log_variance: torch.Tensor,
+) -> torch.Tensor:
+    """Calculate KL divergence from diagonal Gaussians to ``N(0, I)``.
+
+    Latent-dimension contributions are summed while the batch axis is retained.
+    The returned tensor therefore contains one KL value per input example.
+    """
+    mean = _floating_latent_matrix(mean, name="mean")
+    log_variance = _floating_latent_matrix(
+        log_variance,
+        name="log_variance",
+    )
+    if mean.shape != log_variance.shape:
+        raise ValueError("mean and log_variance must have equal shapes")
+    if mean.device != log_variance.device or mean.dtype != log_variance.dtype:
+        raise ValueError("mean and log_variance must share dtype and device")
+    return 0.5 * torch.sum(
+        torch.exp(log_variance) + mean.square() - 1.0 - log_variance,
+        dim=1,
+    )
+
+
+def vae_loss(
+    reconstruction_logits: torch.Tensor,
+    targets: torch.Tensor,
+    mean: torch.Tensor,
+    log_variance: torch.Tensor,
+    *,
+    beta: float = 1.0,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Return negative ELBO and its per-image reconstruction and KL terms.
+
+    Pixel Bernoulli NLL is summed within each image and averaged across the
+    batch. KL divergence is likewise summed across latent dimensions and then
+    averaged across the batch, placing both terms on a per-example scale.
+    ``beta=1`` gives the standard VAE objective.
+    """
+    if not isinstance(reconstruction_logits, torch.Tensor):
+        raise TypeError("reconstruction_logits must be a PyTorch tensor")
+    if not reconstruction_logits.is_floating_point():
+        raise TypeError("reconstruction_logits must be floating-point")
+    targets = _floating_image_batch(targets, name="targets")
+    if reconstruction_logits.shape != targets.shape:
+        raise ValueError("reconstruction_logits and targets must have equal shapes")
+    if reconstruction_logits.device != targets.device:
+        raise ValueError("reconstruction_logits and targets must share a device")
+    if isinstance(beta, bool) or not isinstance(beta, Real):
+        raise TypeError("beta must be numeric")
+    beta = float(beta)
+    if not math.isfinite(beta) or beta < 0.0:
+        raise ValueError("beta must be nonnegative and finite")
+
+    per_image_reconstruction = F.binary_cross_entropy_with_logits(
+        reconstruction_logits,
+        targets,
+        reduction="none",
+    ).flatten(start_dim=1).sum(dim=1)
+    reconstruction_loss = per_image_reconstruction.mean()
+    per_image_kl = gaussian_kl_divergence(mean, log_variance)
+    if per_image_kl.shape[0] != targets.shape[0]:
+        raise ValueError("latent parameters and targets must share a batch size")
+    kl_loss = per_image_kl.mean()
+    total_loss = reconstruction_loss + beta * kl_loss
+    return total_loss, reconstruction_loss, kl_loss
+
+
+def train_vae(
+    model: nn.Module,
+    images: torch.Tensor,
+    *,
+    epochs: int = 30,
+    batch_size: int = 128,
+    learning_rate: float = 1e-3,
+    beta: float = 1.0,
+) -> dict[str, list[float]]:
+    """Train a VAE and return per-epoch negative-ELBO components.
+
+    The model must return ``(logits, mean, log_variance, latent_codes)``.
+    Histories are averages per image and correctly weight a partial final
+    batch. The sampled latent codes are part of the forward result but are not
+    directly needed by the standard VAE loss.
+    """
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    images = _floating_image_batch(images, name="images")
+    epochs = _positive_integer(epochs, name="epochs")
+    batch_size = _positive_integer(batch_size, name="batch_size")
+    if isinstance(learning_rate, bool) or not isinstance(learning_rate, Real):
+        raise TypeError("learning_rate must be numeric")
+    learning_rate = float(learning_rate)
+    if not math.isfinite(learning_rate) or learning_rate <= 0.0:
+        raise ValueError("learning_rate must be positive and finite")
+    if isinstance(beta, bool) or not isinstance(beta, Real):
+        raise TypeError("beta must be numeric")
+    beta = float(beta)
+    if not math.isfinite(beta) or beta < 0.0:
+        raise ValueError("beta must be nonnegative and finite")
+
+    loader = DataLoader(TensorDataset(images), batch_size=batch_size, shuffle=True)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    history = {"total": [], "reconstruction": [], "kl": []}
+    device = _model_device(model)
+
+    for _ in range(epochs):
+        totals = {name: 0.0 for name in history}
+        number_images = 0
+        model.train()
+        for (batch,) in loader:
+            batch = batch.to(device)
+            optimizer.zero_grad()
+            reconstruction_logits, mean, log_variance, _ = model(batch)
+            total_loss, reconstruction_loss, kl_loss = vae_loss(
+                reconstruction_logits,
+                batch,
+                mean,
+                log_variance,
+                beta=beta,
+            )
+            total_loss.backward()
+            optimizer.step()
+
+            count = batch.shape[0]
+            totals["total"] += total_loss.item() * count
+            totals["reconstruction"] += reconstruction_loss.item() * count
+            totals["kl"] += kl_loss.item() * count
+            number_images += count
+
+        for name in history:
+            history[name].append(totals[name] / number_images)
+    return history
+
+
+@torch.no_grad()
+def reconstruct_with_vae(
+    model: nn.Module,
+    images: torch.Tensor,
+    *,
+    sample: bool = False,
+) -> torch.Tensor:
+    """Reconstruct images from posterior means or posterior samples.
+
+    ``sample=False`` decodes the posterior mean and is deterministic for an
+    otherwise deterministic model in evaluation mode. ``sample=True`` draws a
+    fresh reparameterized code and allows the posterior variance to influence
+    the reconstruction. Results remain on the model's device.
+    """
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    if not hasattr(model, "encode") or not hasattr(model, "decode"):
+        raise ValueError("model must provide encode and decode methods")
+    if not isinstance(sample, bool):
+        raise TypeError("sample must be Boolean")
+    images = _floating_image_batch(images, name="images")
+    model.eval()
+    mean, log_variance = model.encode(images.to(_model_device(model)))
+    latent_codes = reparameterize(mean, log_variance) if sample else mean
+    return torch.sigmoid(model.decode(latent_codes))
+
+
+@torch.no_grad()
+def sample_from_vae(
+    model: nn.Module,
+    number_images: int,
+    *,
+    seed: int = 0,
+) -> torch.Tensor:
+    """Generate images by decoding standard-normal prior samples.
+
+    The encoder is not used. A local random generator makes samples
+    reproducible for an equal model, seed, and device. Returned probabilities
+    are moved to the CPU for convenient plotting.
+    """
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    if not hasattr(model, "decode") or not hasattr(model, "latent_dim"):
+        raise ValueError("model must provide decode and latent_dim")
+    number_images = _positive_integer(number_images, name="number_images")
+    if isinstance(seed, bool) or not isinstance(seed, Integral):
+        raise TypeError("seed must be an integer")
+
+    device = _model_device(model)
+    generator = torch.Generator(device=device).manual_seed(int(seed))
+    latent_codes = torch.randn(
+        number_images,
+        model.latent_dim,
+        generator=generator,
+        device=device,
+    )
+    model.eval()
+    return torch.sigmoid(model.decode(latent_codes)).cpu()
+
+
+@torch.no_grad()
+def encode_vae_means(model: nn.Module, images: torch.Tensor) -> torch.Tensor:
+    """Return approximate-posterior centers on the CPU for visualization."""
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    if not hasattr(model, "encode"):
+        raise ValueError("model must provide an encode method")
+    images = _floating_image_batch(images, name="images")
+    model.eval()
+    mean, _ = model.encode(images.to(_model_device(model)))
+    return mean.cpu()
+
+
+def _floating_latent_matrix(
+    values: torch.Tensor,
+    *,
+    name: str,
+) -> torch.Tensor:
+    """Validate a nonempty floating-point latent matrix with shape (N, D)."""
+    if not isinstance(values, torch.Tensor):
+        raise TypeError(f"{name} must be a PyTorch tensor")
+    if values.ndim != 2 or any(size == 0 for size in values.shape):
+        raise ValueError(f"{name} must have nonempty shape (N, D)")
+    if not values.is_floating_point():
+        raise TypeError(f"{name} must contain floating-point values")
+    return values
