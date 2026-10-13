@@ -91,6 +91,29 @@ def test_vae_loss_has_per_image_scaling_and_beta_weight() -> None:
     torch.testing.assert_close(total, reconstruction + 0.25 * kl)
 
 
+def test_vae_loss_accepts_color_image_batches() -> None:
+    logits = torch.randn(3, 3, 4, 4)
+    targets = torch.rand(3, 3, 4, 4)
+    mean = torch.zeros(3, 2)
+    log_variance = torch.zeros_like(mean)
+
+    total, reconstruction, kl = vae_loss(
+        logits,
+        targets,
+        mean,
+        log_variance,
+    )
+
+    expected = F.binary_cross_entropy_with_logits(
+        logits,
+        targets,
+        reduction="sum",
+    ) / targets.shape[0]
+    torch.testing.assert_close(reconstruction, expected)
+    torch.testing.assert_close(kl, torch.zeros(()))
+    torch.testing.assert_close(total, expected)
+
+
 def test_vae_reconstruction_and_prior_sampling_helpers() -> None:
     torch.manual_seed(1)
     model = TinyVAE(image_size=4, hidden_dim=8, latent_dim=2)

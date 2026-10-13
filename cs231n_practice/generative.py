@@ -696,7 +696,14 @@ def vae_loss(
         raise TypeError("reconstruction_logits must be a PyTorch tensor")
     if not reconstruction_logits.is_floating_point():
         raise TypeError("reconstruction_logits must be floating-point")
-    targets = _floating_image_batch(targets, name="targets")
+    if not isinstance(targets, torch.Tensor):
+        raise TypeError("targets must be a PyTorch tensor")
+    if targets.ndim < 2 or any(size == 0 for size in targets.shape):
+        raise ValueError("targets must have a nonempty batch and feature dimensions")
+    if not targets.is_floating_point():
+        raise TypeError("targets must contain floating-point values")
+    if torch.any(targets < 0.0) or torch.any(targets > 1.0):
+        raise ValueError("targets must lie in the interval [0, 1]")
     if reconstruction_logits.shape != targets.shape:
         raise ValueError("reconstruction_logits and targets must have equal shapes")
     if reconstruction_logits.device != targets.device:
