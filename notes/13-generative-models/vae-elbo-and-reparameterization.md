@@ -189,4 +189,8 @@ from the prior and run only the decoder.
   the [course schedule](https://cs231n.stanford.edu/2025/schedule.html).
 - Kingma and Welling, [Auto-Encoding Variational
   Bayes](https://arxiv.org/abs/1312.6114).
+- [KL Divergence — Clearly
+  Explained](https://www.youtube.com/watch?v=9_eZHt2qJs4) (video).
+- [Evidence Lower Bound (ELBO) — Clearly
+  Explained](https://www.youtube.com/watch?v=IXsA5Rpp25w) (video).
 

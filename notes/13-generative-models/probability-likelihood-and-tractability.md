@@ -3,6 +3,10 @@
 Probability and likelihood can use the same mathematical expression, but they
 answer different questions depending on what is treated as fixed.
 
+**Tractability** describes whether a mathematically defined quantity can be
+computed exactly with a practical amount of time and memory. An intractable
+quantity is well defined, but calculating it exactly is prohibitively costly.
+
 Suppose a model assigns data $x$ a distribution $p_\theta(x)$, controlled by
 parameters $\theta$.
 
@@ -41,16 +45,42 @@ integrate to one across parameter values.
 
 ### Small Bernoulli example
 
-For one binary observation $x=1$:
+Let $x$ be a binary observation and let $\theta$ be the model's probability of
+producing one:
 
 $$
-p_\theta(x=1)=\theta.
+x\in\{0,1\},
+\qquad
+p(x=1\mid\theta)=\theta.
 $$
+
+The vertical bar in $p(x=1\mid\theta)$ is read as “given”: the probability of
+observing $x=1$, given a particular value of $\theta$. The equivalent subscript
+notation is
+
+$$
+p(x=1\mid\theta)=p_\theta(x=1)=\theta.
+$$
+
+In $p_\theta(x)$, the subscript says that the probability distribution is the
+one controlled by $\theta$. In this context, both notations mean the same
+thing; they only place the parameter in different parts of the expression.
 
 - Probability interpretation: for a fixed $\theta=0.8$, the probability of
   observing one is $0.8$.
-- Likelihood interpretation: after observing one, values of $\theta$ closer
-  to one have greater likelihood.
+- Likelihood interpretation: after observing $x=1$, the observation is fixed
+  and we compare candidate values of $\theta$. A larger $\theta$ assigns more
+  probability to what actually occurred and therefore has greater likelihood.
+
+If we had instead observed $x=0$, then
+
+$$
+p_\theta(x=0)=1-\theta,
+$$
+
+so values of $\theta$ closer to zero would have greater likelihood. “Closer to
+one” is therefore specific to observing one, not a general property of
+likelihood.
 
 Maximum likelihood estimation chooses parameters that maximize the likelihood
 of all observed training examples. In practice, neural networks usually
