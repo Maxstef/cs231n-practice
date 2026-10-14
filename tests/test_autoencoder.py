@@ -10,6 +10,7 @@ from cs231n_practice.generative import (
     encode_images,
     interpolate_latent_codes,
     reconstruct_images,
+    spatial_sharpness,
     train_autoencoder,
 )
 
@@ -96,6 +97,38 @@ def test_reconstruction_encoding_and_interpolation_helpers() -> None:
         second = torch.sigmoid(model.decode(model.encode(images[1:2])))[0]
     torch.testing.assert_close(interpolations[0], first)
     torch.testing.assert_close(interpolations[-1], second)
+
+
+def test_color_vae_interpolation_uses_posterior_means() -> None:
+    from cs231n_practice.classifiers import ConvolutionalVAE
+
+    model = ConvolutionalVAE(image_size=8, base_channels=4, latent_dim=3)
+    first = torch.rand(3, 8, 8)
+    second = torch.rand(3, 8, 8)
+
+    interpolations = interpolate_latent_codes(
+        model,
+        first,
+        second,
+        number_steps=5,
+    )
+
+    assert interpolations.shape == (5, 3, 8, 8)
+    with torch.no_grad():
+        endpoint_means, _ = model.encode(torch.stack((first, second)))
+        expected_first = torch.sigmoid(model.decode(endpoint_means[:1]))[0]
+        expected_second = torch.sigmoid(model.decode(endpoint_means[1:]))[0]
+    torch.testing.assert_close(interpolations[0], expected_first)
+    torch.testing.assert_close(interpolations[-1], expected_second)
+
+
+def test_spatial_sharpness_measures_neighbor_differences() -> None:
+    constant = torch.zeros(2, 3, 4, 4)
+    horizontal_edge = constant.clone()
+    horizontal_edge[:, :, 2:, :] = 1.0
+
+    torch.testing.assert_close(spatial_sharpness(constant), torch.zeros(()))
+    assert spatial_sharpness(horizontal_edge) > 0.0
 
 
 def test_decode_latent_grid_returns_axes_and_row_major_images() -> None:

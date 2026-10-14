@@ -3,7 +3,13 @@
 from cs231n_practice.classifiers.autoregressive import (
     BinaryImageAutoregressiveModel,
 )
-from cs231n_practice.classifiers.autoencoder import TinyAutoencoder
+from cs231n_practice.classifiers.autoencoder import (
+    ConvolutionalAutoencoder,
+    ConvolutionalDecoder,
+    ConvolutionalVAE,
+    TinyAutoencoder,
+    VAEEncoderView,
+)
 from cs231n_practice.classifiers.cnn import SmallConvNet
 from cs231n_practice.classifiers.knn import KNearestNeighbor
 from cs231n_practice.classifiers.linear import (
@@ -35,6 +41,9 @@ from cs231n_practice.classifiers.vae import TinyVAE
 
 __all__ = [
     "BinaryImageAutoregressiveModel",
+    "ConvolutionalAutoencoder",
+    "ConvolutionalDecoder",
+    "ConvolutionalVAE",
     "FineTunedClassifier",
     "KNearestNeighbor",
     "MAEEncoderView",
@@ -52,6 +61,7 @@ __all__ = [
     "TinyAutoencoder",
     "TinyVisionTransformer",
     "TinyVAE",
+    "VAEEncoderView",
     "classification_accuracy",
     "linear_scores",
     "predict_linear",

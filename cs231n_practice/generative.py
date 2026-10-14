@@ -341,11 +341,13 @@ def sample_autoregressive_sequences(
 
 
 def _floating_image_batch(images: torch.Tensor, *, name: str) -> torch.Tensor:
-    """Validate a nonempty floating-point image batch with shape (N, H, W)."""
+    """Validate grayscale ``(N,H,W)`` or channel-first ``(N,C,H,W)`` images."""
     if not isinstance(images, torch.Tensor):
         raise TypeError(f"{name} must be a PyTorch tensor")
-    if images.ndim != 3 or any(size == 0 for size in images.shape):
-        raise ValueError(f"{name} must have nonempty shape (N, H, W)")
+    if images.ndim not in {3, 4} or any(size == 0 for size in images.shape):
+        raise ValueError(
+            f"{name} must have nonempty shape (N, H, W) or (N, C, H, W)"
+        )
     if not images.is_floating_point():
         raise TypeError(f"{name} must contain floating-point values")
     return images
@@ -505,6 +507,9 @@ def interpolate_latent_codes(
 
     The first and final results are reconstructions of the supplied endpoint
     images. Intermediate results decode convex combinations of their codes.
+    A deterministic encoder may return codes directly; a VAE encoder may
+    return ``(mean, log_variance)``, in which case posterior means are used.
+    Endpoints may be grayscale ``(H,W)`` or channel-first ``(C,H,W)`` images.
     """
     if not isinstance(model, nn.Module):
         raise TypeError("model must be a torch.nn.Module")
@@ -518,19 +523,43 @@ def interpolate_latent_codes(
         torch.Tensor,
     ):
         raise TypeError("endpoint images must be PyTorch tensors")
-    if first_image.shape != second_image.shape or first_image.ndim != 2:
-        raise ValueError("endpoint images must have equal shape (H, W)")
+    if first_image.shape != second_image.shape or first_image.ndim not in {2, 3}:
+        raise ValueError(
+            "endpoint images must have equal shape (H, W) or (C, H, W)"
+        )
     if not first_image.is_floating_point() or not second_image.is_floating_point():
         raise TypeError("endpoint images must contain floating-point values")
 
     device = _model_device(model)
     model.eval()
-    endpoints = model.encode(
-        torch.stack((first_image, second_image)).to(device)
-    )
+    endpoints = model.encode(torch.stack((first_image, second_image)).to(device))
+    if isinstance(endpoints, tuple):
+        endpoints = endpoints[0]
+    if not isinstance(endpoints, torch.Tensor) or endpoints.ndim != 2:
+        raise ValueError("model.encode must return codes or means with shape (N, D)")
     alpha = torch.linspace(0.0, 1.0, number_steps, device=device).unsqueeze(1)
     latent_codes = (1.0 - alpha) * endpoints[0] + alpha * endpoints[1]
     return torch.sigmoid(model.decode(latent_codes)).cpu()
+
+
+def spatial_sharpness(images: torch.Tensor) -> torch.Tensor:
+    """Return mean horizontal-plus-vertical absolute pixel variation.
+
+    The result is a simple edge-strength proxy rather than a perceptual image
+    quality metric. Larger values indicate stronger average local changes.
+
+    Args:
+        images: Grayscale ``(N,H,W)`` or channel-first ``(N,C,H,W)`` images.
+
+    Returns:
+        A scalar tensor on the input device.
+    """
+    images = _floating_image_batch(images, name="images")
+    if images.shape[-2] < 2 or images.shape[-1] < 2:
+        raise ValueError("image height and width must both be at least two")
+    vertical = torch.abs(images[..., 1:, :] - images[..., :-1, :]).mean()
+    horizontal = torch.abs(images[..., :, 1:] - images[..., :, :-1]).mean()
+    return vertical + horizontal
 
 
 @torch.no_grad()

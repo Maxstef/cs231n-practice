@@ -2,7 +2,12 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from cs231n_practice.classifiers import TinyVAE
+from cs231n_practice.classifiers import (
+    ConvolutionalAutoencoder,
+    ConvolutionalVAE,
+    TinyVAE,
+    VAEEncoderView,
+)
 from cs231n_practice.generative import (
     encode_vae_means,
     gaussian_kl_divergence,
@@ -171,3 +176,81 @@ def test_vae_components_reject_invalid_inputs() -> None:
         )
     with pytest.raises(TypeError, match="Boolean"):
         reconstruct_with_vae(model, torch.zeros(2, 4, 4), sample=1)
+
+
+def test_convolutional_autoencoder_and_vae_shapes_and_gradients() -> None:
+    torch.manual_seed(5)
+    images = torch.rand(4, 3, 16, 16)
+    autoencoder = ConvolutionalAutoencoder(latent_dim=7)
+    vae = ConvolutionalVAE(latent_dim=7)
+
+    ae_codes = autoencoder.encode(images)
+    ae_logits = autoencoder(images)
+    vae_logits, mean, log_variance, latent_codes = vae(images)
+    total, _, _ = vae_loss(vae_logits, images, mean, log_variance)
+    (ae_logits.square().mean() + total).backward()
+
+    assert ae_codes.shape == (4, 7)
+    assert ae_logits.shape == vae_logits.shape == images.shape
+    assert mean.shape == log_variance.shape == latent_codes.shape == (4, 7)
+    assert all(parameter.grad is not None for parameter in autoencoder.parameters())
+    assert all(parameter.grad is not None for parameter in vae.parameters())
+
+
+def test_vae_encoder_view_returns_deterministic_posterior_means() -> None:
+    vae = ConvolutionalVAE(latent_dim=5)
+    encoder = VAEEncoderView(vae)
+    images = torch.rand(3, 3, 16, 16)
+
+    first = encoder(images)
+    second = encoder(images)
+    expected, _ = vae.encode(images)
+
+    torch.testing.assert_close(first, second)
+    torch.testing.assert_close(first, expected)
+    assert first.shape == (3, 5)
+    assert encoder.feature_dim == 5
+
+
+def test_color_vae_helpers_reconstruct_encode_sample_and_train() -> None:
+    torch.manual_seed(6)
+    model = ConvolutionalVAE(
+        image_size=8,
+        base_channels=4,
+        latent_dim=3,
+    )
+    images = torch.rand(8, 3, 8, 8)
+
+    reconstructions = reconstruct_with_vae(model, images)
+    means = encode_vae_means(model, images)
+    samples = sample_from_vae(model, 5, seed=9)
+    history = train_vae(
+        model,
+        images,
+        epochs=1,
+        batch_size=4,
+        learning_rate=1e-3,
+    )
+
+    assert reconstructions.shape == images.shape
+    assert means.shape == (8, 3)
+    assert samples.shape == (5, 3, 8, 8)
+    assert all(len(values) == 1 for values in history.values())
+    assert torch.all((samples >= 0.0) & (samples <= 1.0))
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "error"),
+    [
+        ({"image_size": 10}, ValueError),
+        ({"input_channels": 0}, ValueError),
+        ({"base_channels": True}, TypeError),
+        ({"latent_dim": 0}, ValueError),
+    ],
+)
+def test_convolutional_vae_rejects_invalid_configuration(
+    kwargs: dict[str, object],
+    error: type[Exception],
+) -> None:
+    with pytest.raises(error):
+        ConvolutionalVAE(**kwargs)  # type: ignore[arg-type]
