@@ -80,9 +80,16 @@ can be explained and implemented—not merely that its lecture was watched.
 - [x] Study large-scale distributed training conceptually: accelerator and
       cluster hardware, distributed parallelism, memory trade-offs, and
       utilization.
-- [ ] Self-supervised and contrastive learning.
-- [ ] Variational autoencoders, GANs, and autoregressive models.
-- [ ] Diffusion models.
+- [x] Study self-supervised pretext tasks, contrastive learning, linear probes,
+      and masked image modeling.
+- [x] Implement and compare autoregressive image models, autoencoders, and
+      variational autoencoders.
+- [ ] Understand GAN generation, adversarial training, common architectures,
+      and training difficulties through a small controlled experiment.
+- [ ] Understand diffusion as iterative noise-to-data generation, then practice
+      a simple rectified-flow training and sampling process.
+- [ ] Study conditional guidance, latent diffusion, and diffusion Transformers
+      at an intuition-first level without requiring full-scale training.
 - [ ] 3D vision and neural implicit representations.
 - [ ] Vision-language models.
 - [ ] Robot learning and human-centered AI.
