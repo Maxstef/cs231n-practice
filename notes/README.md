@@ -128,6 +128,10 @@ they are not copies of Stanford lecture slides.
 - [Autoregressive generative models](13-generative-models/autoregressive-generative-models.md)
 - [Autoencoders and variational autoencoders](13-generative-models/autoencoders-and-variational-autoencoders.md)
 - [VAE ELBO and reparameterization](13-generative-models/vae-elbo-and-reparameterization.md)
+- [Generative adversarial networks](14-generative-models/generative-adversarial-networks.md)
+- [Diffusion intuition and rectified flow](14-generative-models/diffusion-and-rectified-flow.md)
+- [Conditional generation and classifier-free guidance](14-generative-models/conditional-generation-and-guidance.md)
+- [Latent diffusion and modern generative systems](14-generative-models/latent-diffusion-and-modern-systems.md)
 
 ## Conventions
 
