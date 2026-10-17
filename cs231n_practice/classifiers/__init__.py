@@ -11,6 +11,7 @@ from cs231n_practice.classifiers.autoencoder import (
     VAEEncoderView,
 )
 from cs231n_practice.classifiers.cnn import SmallConvNet
+from cs231n_practice.classifiers.gan import MLPDiscriminator, MLPGenerator
 from cs231n_practice.classifiers.knn import KNearestNeighbor
 from cs231n_practice.classifiers.linear import (
     TrainingResult,
@@ -47,6 +48,8 @@ __all__ = [
     "FineTunedClassifier",
     "KNearestNeighbor",
     "MAEEncoderView",
+    "MLPDiscriminator",
+    "MLPGenerator",
     "ProjectionHead",
     "RotationPredictionModel",
     "SmallConvNet",

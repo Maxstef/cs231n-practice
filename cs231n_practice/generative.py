@@ -909,3 +909,182 @@ def _floating_latent_matrix(
     if not values.is_floating_point():
         raise TypeError(f"{name} must contain floating-point values")
     return values
+
+
+def sample_latent(
+    number_samples: int,
+    latent_dim: int,
+    *,
+    device: torch.device | str | None = None,
+    dtype: torch.dtype | None = None,
+    random_generator: torch.Generator | None = None,
+) -> torch.Tensor:
+    """Draw independent standard-normal latent vectors.
+
+    Args:
+        number_samples: Number of latent vectors to draw.
+        latent_dim: Number of coordinates in each vector.
+        device: Device on which to create the vectors.
+        dtype: Floating-point dtype. PyTorch's current default is used when
+            omitted.
+        random_generator: Optional local random generator for reproducibility.
+
+    Returns:
+        A tensor with shape ``(number_samples, latent_dim)`` sampled from
+        ``N(0, I)``.
+    """
+    number_samples = _positive_integer(number_samples, name="number_samples")
+    latent_dim = _positive_integer(latent_dim, name="latent_dim")
+    if dtype is not None and not torch.empty((), dtype=dtype).is_floating_point():
+        raise TypeError("dtype must be a floating-point dtype")
+    return torch.randn(
+        number_samples,
+        latent_dim,
+        device=device,
+        dtype=dtype,
+        generator=random_generator,
+    )
+
+
+def gan_discriminator_loss(
+    real_logits: torch.Tensor,
+    generated_logits: torch.Tensor,
+) -> torch.Tensor:
+    """Calculate the non-saturating GAN discriminator loss.
+
+    Real examples receive target one and generated examples receive target
+    zero. The sigmoid is deliberately not applied by the discriminator because
+    ``binary_cross_entropy_with_logits`` combines both operations stably.
+    """
+    for logits, name in (
+        (real_logits, "real_logits"),
+        (generated_logits, "generated_logits"),
+    ):
+        if not isinstance(logits, torch.Tensor):
+            raise TypeError(f"{name} must be a PyTorch tensor")
+        if logits.numel() == 0:
+            raise ValueError(f"{name} must be nonempty")
+        if not logits.is_floating_point():
+            raise TypeError(f"{name} must contain floating-point values")
+    real_loss = F.binary_cross_entropy_with_logits(
+        real_logits,
+        torch.ones_like(real_logits),
+    )
+    generated_loss = F.binary_cross_entropy_with_logits(
+        generated_logits,
+        torch.zeros_like(generated_logits),
+    )
+    return real_loss + generated_loss
+
+
+def gan_generator_loss(generated_logits: torch.Tensor) -> torch.Tensor:
+    """Calculate the non-saturating GAN generator loss.
+
+    The generator asks the discriminator to classify generated examples as
+    real, so their target is one. This form usually provides stronger early
+    gradients than directly minimizing ``log(1 - D(G(z)))``.
+    """
+    if not isinstance(generated_logits, torch.Tensor):
+        raise TypeError("generated_logits must be a PyTorch tensor")
+    if generated_logits.numel() == 0:
+        raise ValueError("generated_logits must be nonempty")
+    if not generated_logits.is_floating_point():
+        raise TypeError("generated_logits must contain floating-point values")
+    return F.binary_cross_entropy_with_logits(
+        generated_logits,
+        torch.ones_like(generated_logits),
+    )
+
+
+def set_requires_grad(model: nn.Module, requires_grad: bool) -> None:
+    """Enable or disable gradient accumulation for every model parameter."""
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    if not isinstance(requires_grad, bool):
+        raise TypeError("requires_grad must be Boolean")
+    for parameter in model.parameters():
+        parameter.requires_grad_(requires_grad)
+
+
+def gan_discriminator_step(
+    generator: nn.Module,
+    discriminator: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    real_samples: torch.Tensor,
+    latent_vectors: torch.Tensor,
+) -> torch.Tensor:
+    """Perform one discriminator-only GAN update.
+
+    Generated samples are detached before entering the discriminator. Thus the
+    discriminator learns from both real and fake examples while no gradient or
+    optimizer update reaches the generator.
+
+    Returns:
+        A detached scalar loss tensor.
+    """
+    if not isinstance(generator, nn.Module) or not isinstance(discriminator, nn.Module):
+        raise TypeError("generator and discriminator must be torch.nn modules")
+    if not isinstance(optimizer, torch.optim.Optimizer):
+        raise TypeError("optimizer must be a torch optimizer")
+    if not isinstance(real_samples, torch.Tensor):
+        raise TypeError("real_samples must be a PyTorch tensor")
+    latent_vectors = _floating_latent_matrix(
+        latent_vectors,
+        name="latent_vectors",
+    )
+
+    discriminator.train()
+    optimizer.zero_grad()
+    generated_samples = generator(latent_vectors).detach()
+    loss = gan_discriminator_loss(
+        discriminator(real_samples),
+        discriminator(generated_samples),
+    )
+    loss.backward()
+    optimizer.step()
+    return loss.detach()
+
+
+def gan_generator_step(
+    generator: nn.Module,
+    discriminator: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    latent_vectors: torch.Tensor,
+) -> torch.Tensor:
+    """Perform one generator-only update through a frozen discriminator.
+
+    Freezing discriminator parameters avoids calculating their gradients, but
+    differentiation still passes through the discriminator operations to the
+    generated samples and then into the generator. Every discriminator
+    parameter's original ``requires_grad`` state is restored afterward.
+
+    Returns:
+        A detached scalar loss tensor.
+    """
+    if not isinstance(generator, nn.Module) or not isinstance(discriminator, nn.Module):
+        raise TypeError("generator and discriminator must be torch.nn modules")
+    if not isinstance(optimizer, torch.optim.Optimizer):
+        raise TypeError("optimizer must be a torch optimizer")
+    latent_vectors = _floating_latent_matrix(
+        latent_vectors,
+        name="latent_vectors",
+    )
+
+    original_gradient_states = [
+        parameter.requires_grad for parameter in discriminator.parameters()
+    ]
+    generator.train()
+    optimizer.zero_grad()
+    set_requires_grad(discriminator, False)
+    try:
+        generated_logits = discriminator(generator(latent_vectors))
+        loss = gan_generator_loss(generated_logits)
+        loss.backward()
+        optimizer.step()
+    finally:
+        for parameter, requires_grad in zip(
+            discriminator.parameters(),
+            original_gradient_states,
+        ):
+            parameter.requires_grad_(requires_grad)
+    return loss.detach()
