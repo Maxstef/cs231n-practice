@@ -1,4 +1,4 @@
-"""Utilities for small autoregressive and autoencoder experiments.
+"""Utilities for small autoregressive, latent-variable, and generative experiments.
 
 Sequence targets use shape (N, T) and model logits use shape (N, T, V),
 where V is the number of possible next values.
@@ -1088,3 +1088,268 @@ def gan_generator_step(
         ):
             parameter.requires_grad_(requires_grad)
     return loss.detach()
+
+
+def make_linear_diffusion_schedule(
+    number_steps: int,
+    *,
+    beta_start: float = 5e-4,
+    beta_end: float = 0.08,
+    device: torch.device | str | None = None,
+    dtype: torch.dtype | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Create linearly increasing noise and cumulative signal schedules.
+
+    ``beta`` is the fraction of variance added at one step, ``alpha=1-beta``
+    is its retained-signal complement, and ``alpha_bar`` is the cumulative
+    product of alphas through that step.
+
+    Returns:
+        ``(betas, alphas, alpha_bars)``, each with shape ``(number_steps,)``.
+    """
+    number_steps = _positive_integer(number_steps, name="number_steps")
+    for value, name in ((beta_start, "beta_start"), (beta_end, "beta_end")):
+        if isinstance(value, bool) or not isinstance(value, Real):
+            raise TypeError(f"{name} must be numeric")
+        if not math.isfinite(float(value)):
+            raise ValueError(f"{name} must be finite")
+    beta_start = float(beta_start)
+    beta_end = float(beta_end)
+    if not 0.0 < beta_start <= beta_end < 1.0:
+        raise ValueError("betas must satisfy 0 < beta_start <= beta_end < 1")
+    if dtype is not None and not torch.empty((), dtype=dtype).is_floating_point():
+        raise TypeError("dtype must be a floating-point dtype")
+
+    betas = torch.linspace(
+        beta_start,
+        beta_end,
+        number_steps,
+        device=device,
+        dtype=dtype,
+    )
+    alphas = 1.0 - betas
+    return betas, alphas, torch.cumprod(alphas, dim=0)
+
+
+def diffuse_samples(
+    clean_samples: torch.Tensor,
+    time_indices: torch.Tensor,
+    alpha_bars: torch.Tensor,
+    *,
+    noise: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Sample arbitrary forward-diffusion states without iterating to them.
+
+    For each batch item this applies ``sqrt(alpha_bar) * clean`` plus
+    ``sqrt(1 - alpha_bar) * noise``. Inputs are feature vectors shaped
+    ``(N, D)`` and each item may select a different discrete time index.
+    """
+    clean_samples = _floating_latent_matrix(clean_samples, name="clean_samples")
+    if not isinstance(time_indices, torch.Tensor):
+        raise TypeError("time_indices must be a PyTorch tensor")
+    if time_indices.ndim != 1 or time_indices.shape[0] != clean_samples.shape[0]:
+        raise ValueError("time_indices must have shape (N,)")
+    if time_indices.dtype not in _INTEGER_DTYPES:
+        raise TypeError("time_indices must contain integers")
+    if not isinstance(alpha_bars, torch.Tensor):
+        raise TypeError("alpha_bars must be a PyTorch tensor")
+    if alpha_bars.ndim != 1 or alpha_bars.numel() == 0:
+        raise ValueError("alpha_bars must have nonempty shape (T,)")
+    if not alpha_bars.is_floating_point():
+        raise TypeError("alpha_bars must contain floating-point values")
+    if (
+        clean_samples.device != time_indices.device
+        or clean_samples.device != alpha_bars.device
+    ):
+        raise ValueError("all inputs must share a device")
+    if clean_samples.dtype != alpha_bars.dtype:
+        raise ValueError("clean_samples and alpha_bars must share a dtype")
+    if torch.any(time_indices < 0) or torch.any(time_indices >= len(alpha_bars)):
+        raise ValueError("time_indices contain an index outside the schedule")
+    if torch.any(alpha_bars <= 0.0) or torch.any(alpha_bars > 1.0):
+        raise ValueError("alpha_bars must lie in the interval (0, 1]")
+
+    if noise is None:
+        noise = torch.randn_like(clean_samples)
+    else:
+        noise = _floating_latent_matrix(noise, name="noise")
+        if noise.shape != clean_samples.shape:
+            raise ValueError("noise and clean_samples must have equal shapes")
+        if noise.device != clean_samples.device or noise.dtype != clean_samples.dtype:
+            raise ValueError("noise and clean_samples must share dtype and device")
+
+    coefficients = alpha_bars[time_indices].reshape(-1, 1)
+    noisy_samples = (
+        coefficients.sqrt() * clean_samples
+        + (1.0 - coefficients).sqrt() * noise
+    )
+    return noisy_samples, noise
+
+
+def reconstruct_clean_samples(
+    noisy_samples: torch.Tensor,
+    predicted_noise: torch.Tensor,
+    alpha_bar_t: torch.Tensor,
+) -> torch.Tensor:
+    """Estimate clean vectors by rearranging the forward-noising equation."""
+    noisy_samples = _floating_latent_matrix(noisy_samples, name="noisy_samples")
+    predicted_noise = _floating_latent_matrix(
+        predicted_noise,
+        name="predicted_noise",
+    )
+    if predicted_noise.shape != noisy_samples.shape:
+        raise ValueError("predicted_noise and noisy_samples must have equal shapes")
+    if not isinstance(alpha_bar_t, torch.Tensor):
+        raise TypeError("alpha_bar_t must be a PyTorch tensor")
+    if alpha_bar_t.ndim == 1:
+        alpha_bar_t = alpha_bar_t.reshape(-1, 1)
+    if alpha_bar_t.shape != (noisy_samples.shape[0], 1):
+        raise ValueError("alpha_bar_t must have shape (N,) or (N, 1)")
+    tensors = (predicted_noise, alpha_bar_t)
+    if any(value.device != noisy_samples.device for value in tensors):
+        raise ValueError("all inputs must share a device")
+    if any(value.dtype != noisy_samples.dtype for value in tensors):
+        raise ValueError("all inputs must share a dtype")
+    if torch.any(alpha_bar_t <= 0.0) or torch.any(alpha_bar_t > 1.0):
+        raise ValueError("alpha_bar_t must lie in the interval (0, 1]")
+    return (
+        noisy_samples - (1.0 - alpha_bar_t).sqrt() * predicted_noise
+    ) / alpha_bar_t.sqrt()
+
+
+def make_rectified_flow_pairs(
+    data_samples: torch.Tensor,
+    *,
+    noise: torch.Tensor | None = None,
+    times: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Construct positions and velocity targets on noise-to-data paths.
+
+    Each independently paired noise and data vector defines the straight path
+    ``x_t = noise + t * (data - noise)``. The returned target velocity is its
+    constant time derivative ``data - noise``.
+
+    Returns:
+        ``(interpolated, times, target_velocity)`` with vector shapes ``(N,D)``
+        and a time shape of ``(N,1)``.
+    """
+    data_samples = _floating_latent_matrix(data_samples, name="data_samples")
+    if noise is None:
+        noise = torch.randn_like(data_samples)
+    else:
+        noise = _floating_latent_matrix(noise, name="noise")
+        if noise.shape != data_samples.shape:
+            raise ValueError("noise and data_samples must have equal shapes")
+        if noise.device != data_samples.device or noise.dtype != data_samples.dtype:
+            raise ValueError("noise and data_samples must share dtype and device")
+    if times is None:
+        times = torch.rand(
+            data_samples.shape[0],
+            1,
+            device=data_samples.device,
+            dtype=data_samples.dtype,
+        )
+    else:
+        if not isinstance(times, torch.Tensor):
+            raise TypeError("times must be a PyTorch tensor")
+        if times.shape != (data_samples.shape[0], 1):
+            raise ValueError("times must have shape (N, 1)")
+        if not times.is_floating_point():
+            raise TypeError("times must contain floating-point values")
+        if times.device != data_samples.device or times.dtype != data_samples.dtype:
+            raise ValueError("times and data_samples must share dtype and device")
+        if torch.any(times < 0.0) or torch.any(times > 1.0):
+            raise ValueError("times must lie in the interval [0, 1]")
+
+    target_velocity = data_samples - noise
+    interpolated = noise + times * target_velocity
+    return interpolated, times, target_velocity
+
+
+def rectified_flow_loss(
+    model: nn.Module,
+    interpolated: torch.Tensor,
+    times: torch.Tensor,
+    target_velocity: torch.Tensor,
+) -> torch.Tensor:
+    """Return elementwise mean squared error for predicted flow velocities."""
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    interpolated = _floating_latent_matrix(interpolated, name="interpolated")
+    target_velocity = _floating_latent_matrix(
+        target_velocity,
+        name="target_velocity",
+    )
+    if target_velocity.shape != interpolated.shape:
+        raise ValueError("target_velocity and interpolated must have equal shapes")
+    predicted_velocity = model(interpolated, times)
+    if predicted_velocity.shape != target_velocity.shape:
+        raise ValueError("model velocities must match target_velocity shape")
+    return F.mse_loss(predicted_velocity, target_velocity)
+
+
+def rectified_flow_training_step(
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    data_samples: torch.Tensor,
+) -> torch.Tensor:
+    """Construct random flow pairs and perform one velocity-regression update."""
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    if not isinstance(optimizer, torch.optim.Optimizer):
+        raise TypeError("optimizer must be a torch optimizer")
+    model.train()
+    interpolated, times, target_velocity = make_rectified_flow_pairs(data_samples)
+    optimizer.zero_grad()
+    loss = rectified_flow_loss(model, interpolated, times, target_velocity)
+    loss.backward()
+    optimizer.step()
+    return loss.detach()
+
+
+@torch.no_grad()
+def sample_rectified_flow(
+    model: nn.Module,
+    initial_noise: torch.Tensor,
+    number_steps: int,
+    *,
+    snapshot_indices: tuple[int, ...] = (),
+) -> tuple[torch.Tensor, dict[int, torch.Tensor]]:
+    """Transport noise through a learned velocity field with Euler updates.
+
+    Time runs from zero at the noise endpoint toward one at the data endpoint.
+    The final samples and requested snapshots preserve the input dtype and
+    device. Snapshot zero is always included, as is the final step.
+    """
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    initial_noise = _floating_latent_matrix(initial_noise, name="initial_noise")
+    number_steps = _positive_integer(number_steps, name="number_steps")
+    if not isinstance(snapshot_indices, tuple):
+        raise TypeError("snapshot_indices must be a tuple of integers")
+    for index in snapshot_indices:
+        if isinstance(index, bool) or not isinstance(index, Integral):
+            raise TypeError("snapshot indices must be integers")
+        if not 0 <= int(index) <= number_steps:
+            raise ValueError("snapshot indices must lie between zero and number_steps")
+
+    model.eval()
+    positions = initial_noise.clone()
+    step_width = 1.0 / number_steps
+    requested = set(snapshot_indices)
+    snapshots = {0: positions.clone()}
+    for step in range(number_steps):
+        times = torch.full(
+            (positions.shape[0], 1),
+            step * step_width,
+            dtype=positions.dtype,
+            device=positions.device,
+        )
+        velocity = model(positions, times)
+        if velocity.shape != positions.shape:
+            raise ValueError("model velocities must match position shape")
+        positions = positions + step_width * velocity
+        completed_step = step + 1
+        if completed_step in requested or completed_step == number_steps:
+            snapshots[completed_step] = positions.clone()
+    return positions, snapshots

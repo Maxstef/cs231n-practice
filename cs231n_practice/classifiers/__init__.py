@@ -23,6 +23,7 @@ from cs231n_practice.classifiers.linear import (
     train_linear_classifier,
 )
 from cs231n_practice.classifiers.neural_net import TwoLayerNet
+from cs231n_practice.classifiers.rectified_flow import VelocityMLP
 from cs231n_practice.classifiers.self_supervised import (
     FineTunedClassifier,
     MAEEncoderView,
@@ -65,6 +66,7 @@ __all__ = [
     "TinyVisionTransformer",
     "TinyVAE",
     "VAEEncoderView",
+    "VelocityMLP",
     "classification_accuracy",
     "linear_scores",
     "predict_linear",
