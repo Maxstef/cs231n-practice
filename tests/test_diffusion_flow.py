@@ -2,7 +2,7 @@ import pytest
 import torch
 from torch import nn
 
-from cs231n_practice.classifiers import VelocityMLP
+from cs231n_practice.classifiers import SmallImageVelocityNet, VelocityMLP
 from cs231n_practice.generative import (
     diffuse_samples,
     make_linear_diffusion_schedule,
@@ -80,6 +80,22 @@ def test_velocity_mlp_shapes_and_backpropagates() -> None:
     assert all(parameter.grad is not None for parameter in model.parameters())
 
 
+@pytest.mark.parametrize("time_shape", [(3,), (3, 1)])
+def test_small_image_velocity_net_matches_image_shape_and_backpropagates(
+    time_shape,
+) -> None:
+    model = SmallImageVelocityNet(image_size=8, base_channels=4)
+    images = torch.randn(3, 8 * 8, requires_grad=True)
+    times = torch.rand(time_shape)
+
+    velocities = model(images, times)
+    velocities.square().mean().backward()
+
+    assert velocities.shape == images.shape
+    assert images.grad is not None
+    assert all(parameter.grad is not None for parameter in model.parameters())
+
+
 def test_rectified_flow_loss_matches_manual_mse() -> None:
     class DoublePosition(nn.Module):
         def forward(self, positions, times):
@@ -152,4 +168,11 @@ def test_diffusion_and_flow_helpers_reject_invalid_inputs() -> None:
             torch.randn(2, 2),
             5,
             snapshot_indices=(6,),
+        )
+    with pytest.raises(ValueError, match="even"):
+        SmallImageVelocityNet(image_size=7)
+    with pytest.raises(ValueError, match="shape"):
+        SmallImageVelocityNet(image_size=8)(
+            torch.randn(2, 10),
+            torch.rand(2, 1),
         )

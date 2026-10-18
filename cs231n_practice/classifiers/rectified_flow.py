@@ -189,3 +189,108 @@ class ConditionalVelocityMLP(nn.Module):
             dim=1,
         )
         return self.network(model_inputs)
+
+
+class SmallImageVelocityNet(nn.Module):
+    """Predict rectified-flow velocities for small grayscale images.
+
+    The compact U-Net-like structure downsamples once, injects continuous
+    time into the compressed features, and upsamples to one velocity per
+    pixel. A skip connection preserves fine spatial information.
+
+    Shape:
+        - Images: ``(N, image_size * image_size)``
+        - Times: ``(N,)`` or ``(N, 1)``
+        - Returned velocities: ``(N, image_size * image_size)``
+    """
+
+    def __init__(self, image_size: int = 16, base_channels: int = 32) -> None:
+        super().__init__()
+        self.image_size = _positive_integer(image_size, name="image_size")
+        self.base_channels = _positive_integer(base_channels, name="base_channels")
+        if self.image_size % 2 != 0:
+            raise ValueError("image_size must be even")
+        self.input_block = nn.Sequential(
+            nn.Conv2d(1, self.base_channels, 3, padding=1),
+            nn.SiLU(),
+        )
+        self.down = nn.Sequential(
+            nn.Conv2d(self.base_channels, 2 * self.base_channels, 4, 2, 1),
+            nn.SiLU(),
+        )
+        self.time_projection = nn.Sequential(
+            nn.Linear(1, 2 * self.base_channels),
+            nn.SiLU(),
+            nn.Linear(2 * self.base_channels, 2 * self.base_channels),
+        )
+        self.middle = nn.Sequential(
+            nn.Conv2d(
+                2 * self.base_channels,
+                2 * self.base_channels,
+                3,
+                padding=1,
+            ),
+            nn.SiLU(),
+            nn.Conv2d(
+                2 * self.base_channels,
+                2 * self.base_channels,
+                3,
+                padding=1,
+            ),
+            nn.SiLU(),
+        )
+        self.up = nn.Sequential(
+            nn.ConvTranspose2d(
+                2 * self.base_channels,
+                self.base_channels,
+                4,
+                2,
+                1,
+            ),
+            nn.SiLU(),
+        )
+        self.output = nn.Conv2d(self.base_channels, 1, 3, padding=1)
+
+    def forward(
+        self,
+        noisy_images: torch.Tensor,
+        times: torch.Tensor,
+    ) -> torch.Tensor:
+        """Return one predicted velocity value for every input pixel."""
+        if not isinstance(noisy_images, torch.Tensor):
+            raise TypeError("noisy_images must be a PyTorch tensor")
+        expected_width = self.image_size**2
+        if (
+            noisy_images.ndim != 2
+            or noisy_images.shape[0] == 0
+            or noisy_images.shape[1] != expected_width
+        ):
+            raise ValueError(
+                "noisy_images must have nonempty shape "
+                f"(N, {expected_width})"
+            )
+        if not noisy_images.is_floating_point():
+            raise TypeError("noisy_images must contain floating-point values")
+        if not isinstance(times, torch.Tensor):
+            raise TypeError("times must be a PyTorch tensor")
+        if times.ndim == 1:
+            times = times[:, None]
+        if times.shape != (noisy_images.shape[0], 1):
+            raise ValueError("times must have shape (N,) or (N, 1)")
+        if not times.is_floating_point():
+            raise TypeError("times must contain floating-point values")
+        if times.device != noisy_images.device or times.dtype != noisy_images.dtype:
+            raise ValueError("noisy_images and times must share dtype and device")
+
+        images = noisy_images.reshape(-1, 1, self.image_size, self.image_size)
+        skip = self.input_block(images)
+        hidden = self.down(skip)
+        time_features = self.time_projection(times).reshape(
+            -1,
+            hidden.shape[1],
+            1,
+            1,
+        )
+        hidden = self.middle(hidden + time_features)
+        hidden = self.up(hidden) + skip
+        return self.output(hidden).flatten(start_dim=1)

@@ -2,7 +2,12 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from cs231n_practice.classifiers import MLPDiscriminator, MLPGenerator
+from cs231n_practice.classifiers import (
+    ConvolutionalDiscriminator,
+    ConvolutionalGenerator,
+    MLPDiscriminator,
+    MLPGenerator,
+)
 from cs231n_practice.generative import (
     gan_discriminator_loss,
     gan_discriminator_step,
@@ -31,6 +36,33 @@ def test_mlp_gan_models_have_expected_shapes_and_gradients() -> None:
 
     assert generated.shape == (5, 4)
     assert logits.shape == (5, 1)
+    assert latent_vectors.grad is not None
+    assert all(parameter.grad is not None for parameter in generator.parameters())
+    assert all(parameter.grad is not None for parameter in discriminator.parameters())
+
+
+def test_convolutional_gan_models_have_expected_shapes_range_and_gradients() -> None:
+    generator = ConvolutionalGenerator(
+        latent_dim=5,
+        image_size=16,
+        base_channels=4,
+    )
+    discriminator = ConvolutionalDiscriminator(
+        image_size=16,
+        base_channels=4,
+    )
+    latent_vectors = torch.randn(3, 5, requires_grad=True)
+
+    generated = generator(latent_vectors)
+    flat_logits = discriminator(generated)
+    image_logits = discriminator(generated.reshape(3, 1, 16, 16))
+    flat_logits.mean().backward()
+
+    assert generated.shape == (3, 16 * 16)
+    assert torch.all(generated >= -1.0)
+    assert torch.all(generated <= 1.0)
+    assert flat_logits.shape == (3, 1)
+    torch.testing.assert_close(flat_logits, image_logits)
     assert latent_vectors.grad is not None
     assert all(parameter.grad is not None for parameter in generator.parameters())
     assert all(parameter.grad is not None for parameter in discriminator.parameters())
@@ -138,3 +170,7 @@ def test_gan_reusables_reject_invalid_inputs() -> None:
         gan_generator_loss(torch.empty(0, 1))
     with pytest.raises(TypeError, match="Boolean"):
         set_requires_grad(MLPDiscriminator(), 1)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="divisible by four"):
+        ConvolutionalGenerator(image_size=15)
+    with pytest.raises(ValueError, match="shape"):
+        ConvolutionalDiscriminator(image_size=16)(torch.randn(2, 10))

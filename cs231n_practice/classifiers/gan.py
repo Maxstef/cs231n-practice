@@ -113,3 +113,121 @@ class MLPDiscriminator(nn.Module):
         if not samples.is_floating_point():
             raise TypeError("samples must contain floating-point values")
         return self.network(samples)
+
+
+class ConvolutionalGenerator(nn.Module):
+    """Generate square grayscale images from latent vectors.
+
+    Two transposed convolutions enlarge a learned low-resolution feature map
+    by a factor of four. The final ``tanh`` bounds pixels to ``[-1, 1]``.
+
+    Shape:
+        - Input: ``(N, latent_dim)``
+        - Output: ``(N, image_size * image_size)``
+    """
+
+    def __init__(
+        self,
+        latent_dim: int = 64,
+        image_size: int = 16,
+        base_channels: int = 32,
+    ) -> None:
+        super().__init__()
+        self.latent_dim = _positive_integer(latent_dim, name="latent_dim")
+        self.image_size = _positive_integer(image_size, name="image_size")
+        self.base_channels = _positive_integer(base_channels, name="base_channels")
+        if self.image_size % 4 != 0:
+            raise ValueError("image_size must be divisible by four")
+        self.initial_size = self.image_size // 4
+        self.network = nn.Sequential(
+            nn.Linear(
+                self.latent_dim,
+                2 * self.base_channels * self.initial_size**2,
+            ),
+            nn.Unflatten(
+                1,
+                (2 * self.base_channels, self.initial_size, self.initial_size),
+            ),
+            nn.BatchNorm2d(2 * self.base_channels),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(
+                2 * self.base_channels,
+                self.base_channels,
+                4,
+                2,
+                1,
+            ),
+            nn.BatchNorm2d(self.base_channels),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(self.base_channels, 1, 4, 2, 1),
+            nn.Tanh(),
+        )
+
+    def forward(self, latent_vectors: torch.Tensor) -> torch.Tensor:
+        """Return flattened generated images for a latent-vector batch."""
+        if not isinstance(latent_vectors, torch.Tensor):
+            raise TypeError("latent_vectors must be a PyTorch tensor")
+        if (
+            latent_vectors.ndim != 2
+            or latent_vectors.shape[0] == 0
+            or latent_vectors.shape[1] != self.latent_dim
+        ):
+            raise ValueError(
+                "latent_vectors must have nonempty shape "
+                f"(N, {self.latent_dim})"
+            )
+        if not latent_vectors.is_floating_point():
+            raise TypeError("latent_vectors must contain floating-point values")
+        return self.network(latent_vectors).flatten(start_dim=1)
+
+
+class ConvolutionalDiscriminator(nn.Module):
+    """Return one real-versus-generated logit for each grayscale image.
+
+    Shape:
+        - Input: ``(N, image_size * image_size)`` or
+          ``(N, 1, image_size, image_size)``
+        - Output: ``(N, 1)``
+    """
+
+    def __init__(self, image_size: int = 16, base_channels: int = 32) -> None:
+        super().__init__()
+        self.image_size = _positive_integer(image_size, name="image_size")
+        self.base_channels = _positive_integer(base_channels, name="base_channels")
+        if self.image_size % 4 != 0:
+            raise ValueError("image_size must be divisible by four")
+        final_size = self.image_size // 4
+        self.network = nn.Sequential(
+            nn.Conv2d(1, self.base_channels, 4, 2, 1),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(self.base_channels, 2 * self.base_channels, 4, 2, 1),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Flatten(),
+            nn.Linear(2 * self.base_channels * final_size**2, 1),
+        )
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        """Return one raw discriminator logit for every input image."""
+        if not isinstance(images, torch.Tensor):
+            raise TypeError("images must be a PyTorch tensor")
+        flat_width = self.image_size**2
+        valid_flat = (
+            images.ndim == 2
+            and images.shape[0] > 0
+            and images.shape[1] == flat_width
+        )
+        valid_nchw = (
+            images.ndim == 4
+            and images.shape[0] > 0
+            and images.shape[1:] == (1, self.image_size, self.image_size)
+        )
+        if not (valid_flat or valid_nchw):
+            raise ValueError(
+                "images must have nonempty shape "
+                f"(N, {flat_width}) or "
+                f"(N, 1, {self.image_size}, {self.image_size})"
+            )
+        if not images.is_floating_point():
+            raise TypeError("images must contain floating-point values")
+        images = images.reshape(-1, 1, self.image_size, self.image_size)
+        return self.network(images)

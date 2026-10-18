@@ -11,7 +11,12 @@ from cs231n_practice.classifiers.autoencoder import (
     VAEEncoderView,
 )
 from cs231n_practice.classifiers.cnn import SmallConvNet
-from cs231n_practice.classifiers.gan import MLPDiscriminator, MLPGenerator
+from cs231n_practice.classifiers.gan import (
+    ConvolutionalDiscriminator,
+    ConvolutionalGenerator,
+    MLPDiscriminator,
+    MLPGenerator,
+)
 from cs231n_practice.classifiers.knn import KNearestNeighbor
 from cs231n_practice.classifiers.linear import (
     TrainingResult,
@@ -25,6 +30,7 @@ from cs231n_practice.classifiers.linear import (
 from cs231n_practice.classifiers.neural_net import TwoLayerNet
 from cs231n_practice.classifiers.rectified_flow import (
     ConditionalVelocityMLP,
+    SmallImageVelocityNet,
     VelocityMLP,
 )
 from cs231n_practice.classifiers.self_supervised import (
@@ -48,6 +54,8 @@ __all__ = [
     "BinaryImageAutoregressiveModel",
     "ConvolutionalAutoencoder",
     "ConvolutionalDecoder",
+    "ConvolutionalDiscriminator",
+    "ConvolutionalGenerator",
     "ConvolutionalVAE",
     "ConditionalVelocityMLP",
     "FineTunedClassifier",
@@ -59,6 +67,7 @@ __all__ = [
     "RotationPredictionModel",
     "SmallConvNet",
     "SmallEncoder",
+    "SmallImageVelocityNet",
     "SmallSimCLR",
     "Small3DVideoClassifier",
     "TrainingResult",
