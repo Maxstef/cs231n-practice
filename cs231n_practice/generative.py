@@ -1353,3 +1353,204 @@ def sample_rectified_flow(
         if completed_step in requested or completed_step == number_steps:
             snapshots[completed_step] = positions.clone()
     return positions, snapshots
+
+
+def drop_conditions(
+    conditions: torch.Tensor,
+    probability: float,
+    *,
+    null_condition: int,
+    random_generator: torch.Generator | None = None,
+) -> torch.Tensor:
+    """Randomly replace discrete condition IDs with a null-condition ID.
+
+    This is classifier-free-guidance condition dropout, not activation
+    dropout. It teaches one conditional model to also make an unconditional
+    prediction when it receives the reserved null ID.
+    """
+    if not isinstance(conditions, torch.Tensor):
+        raise TypeError("conditions must be a PyTorch tensor")
+    if conditions.ndim != 1 or conditions.numel() == 0:
+        raise ValueError("conditions must have nonempty shape (N,)")
+    if conditions.dtype not in _INTEGER_DTYPES:
+        raise TypeError("conditions must contain integer IDs")
+    if isinstance(null_condition, bool) or not isinstance(null_condition, Integral):
+        raise TypeError("null_condition must be an integer")
+    null_condition = int(null_condition)
+    if null_condition < 0:
+        raise ValueError("null_condition must be nonnegative")
+    if isinstance(probability, bool) or not isinstance(probability, Real):
+        raise TypeError("probability must be numeric")
+    probability = float(probability)
+    if not math.isfinite(probability) or not 0.0 <= probability <= 1.0:
+        raise ValueError("probability must lie in the interval [0, 1]")
+
+    drop_mask = torch.rand(
+        conditions.shape,
+        device=conditions.device,
+        generator=random_generator,
+    ) < probability
+    return torch.where(
+        drop_mask,
+        torch.full_like(conditions, null_condition),
+        conditions,
+    )
+
+
+def classifier_free_guided_velocity(
+    model: nn.Module,
+    positions: torch.Tensor,
+    times: torch.Tensor,
+    conditions: torch.Tensor,
+    *,
+    null_condition: int,
+    guidance_scale: float = 1.0,
+) -> torch.Tensor:
+    """Combine unconditional and conditional velocity predictions.
+
+    The convention is ``unconditional + w * (conditional - unconditional)``.
+    Therefore ``w=0`` is unconditional, ``w=1`` is ordinary conditional
+    prediction, and values above one extrapolate toward stronger adherence.
+    """
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    positions = _floating_latent_matrix(positions, name="positions")
+    if not isinstance(conditions, torch.Tensor):
+        raise TypeError("conditions must be a PyTorch tensor")
+    if conditions.ndim != 1 or conditions.shape[0] != positions.shape[0]:
+        raise ValueError("conditions must have shape (N,)")
+    if conditions.dtype not in _INTEGER_DTYPES:
+        raise TypeError("conditions must contain integer IDs")
+    if conditions.device != positions.device:
+        raise ValueError("positions and conditions must share a device")
+    if isinstance(null_condition, bool) or not isinstance(null_condition, Integral):
+        raise TypeError("null_condition must be an integer")
+    if isinstance(guidance_scale, bool) or not isinstance(guidance_scale, Real):
+        raise TypeError("guidance_scale must be numeric")
+    guidance_scale = float(guidance_scale)
+    if not math.isfinite(guidance_scale):
+        raise ValueError("guidance_scale must be finite")
+
+    null_conditions = torch.full_like(conditions, int(null_condition))
+    conditional_velocity = model(positions, times, conditions)
+    unconditional_velocity = model(positions, times, null_conditions)
+    if conditional_velocity.shape != positions.shape:
+        raise ValueError("model velocities must match position shape")
+    if unconditional_velocity.shape != positions.shape:
+        raise ValueError("model velocities must match position shape")
+    return unconditional_velocity + guidance_scale * (
+        conditional_velocity - unconditional_velocity
+    )
+
+
+def conditional_rectified_flow_loss(
+    model: nn.Module,
+    interpolated: torch.Tensor,
+    times: torch.Tensor,
+    target_velocity: torch.Tensor,
+    conditions: torch.Tensor,
+) -> torch.Tensor:
+    """Return MSE for condition-dependent velocity predictions."""
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    interpolated = _floating_latent_matrix(interpolated, name="interpolated")
+    target_velocity = _floating_latent_matrix(
+        target_velocity,
+        name="target_velocity",
+    )
+    if target_velocity.shape != interpolated.shape:
+        raise ValueError("target_velocity and interpolated must have equal shapes")
+    predicted_velocity = model(interpolated, times, conditions)
+    if predicted_velocity.shape != target_velocity.shape:
+        raise ValueError("model velocities must match target_velocity shape")
+    return F.mse_loss(predicted_velocity, target_velocity)
+
+
+def conditional_rectified_flow_training_step(
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    data_samples: torch.Tensor,
+    conditions: torch.Tensor,
+    *,
+    null_condition: int,
+    condition_dropout: float = 0.15,
+) -> torch.Tensor:
+    """Perform one conditional flow update with null-condition training."""
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    if not isinstance(optimizer, torch.optim.Optimizer):
+        raise TypeError("optimizer must be a torch optimizer")
+    data_samples = _floating_latent_matrix(data_samples, name="data_samples")
+    if not isinstance(conditions, torch.Tensor):
+        raise TypeError("conditions must be a PyTorch tensor")
+    if conditions.ndim != 1 or conditions.shape[0] != data_samples.shape[0]:
+        raise ValueError("conditions must have shape (N,)")
+    if conditions.device != data_samples.device:
+        raise ValueError("data_samples and conditions must share a device")
+
+    model.train()
+    interpolated, times, target_velocity = make_rectified_flow_pairs(data_samples)
+    model_conditions = drop_conditions(
+        conditions,
+        condition_dropout,
+        null_condition=null_condition,
+    )
+    optimizer.zero_grad()
+    loss = conditional_rectified_flow_loss(
+        model,
+        interpolated,
+        times,
+        target_velocity,
+        model_conditions,
+    )
+    loss.backward()
+    optimizer.step()
+    return loss.detach()
+
+
+@torch.no_grad()
+def sample_conditional_rectified_flow(
+    model: nn.Module,
+    initial_noise: torch.Tensor,
+    conditions: torch.Tensor,
+    number_steps: int,
+    *,
+    null_condition: int,
+    guidance_scale: float = 1.0,
+) -> torch.Tensor:
+    """Generate conditioned vectors with guided Euler integration.
+
+    The requested condition stays fixed while position and time change. At
+    every step, the model recomputes conditional and unconditional velocities
+    and their classifier-free-guidance combination.
+    """
+    if not isinstance(model, nn.Module):
+        raise TypeError("model must be a torch.nn.Module")
+    positions = _floating_latent_matrix(initial_noise, name="initial_noise").clone()
+    number_steps = _positive_integer(number_steps, name="number_steps")
+    if not isinstance(conditions, torch.Tensor):
+        raise TypeError("conditions must be a PyTorch tensor")
+    if conditions.ndim != 1 or conditions.shape[0] != positions.shape[0]:
+        raise ValueError("conditions must have shape (N,)")
+    if conditions.device != positions.device:
+        raise ValueError("initial_noise and conditions must share a device")
+
+    model.eval()
+    step_width = 1.0 / number_steps
+    for step in range(number_steps):
+        times = torch.full(
+            (positions.shape[0], 1),
+            step * step_width,
+            dtype=positions.dtype,
+            device=positions.device,
+        )
+        velocity = classifier_free_guided_velocity(
+            model,
+            positions,
+            times,
+            conditions,
+            null_condition=null_condition,
+            guidance_scale=guidance_scale,
+        )
+        positions = positions + step_width * velocity
+    return positions
