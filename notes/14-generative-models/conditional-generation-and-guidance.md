@@ -57,19 +57,31 @@ $$
 v_{cond}-v_{uncond}
 $$
 
-represents the change caused by the condition. Sampling can amplify it:
+represents the change caused by the condition. Using guidance scale $w$,
+sampling can amplify it:
 
 $$
-v_{guided}=v_{uncond}+s\left(v_{cond}-v_{uncond}\right).
+v_{guided}=v_{uncond}+w\left(v_{cond}-v_{uncond}\right).
 $$
 
-Here $s$ is the **extra guidance strength** used by the lecture. This is
-equivalent to
-$v_{guided}=(1+s)v_{cond}-s v_{uncond}$ under the lecture's convention.
+Under this convention:
 
-- $s=0$ uses the ordinary conditional prediction;
-- larger $s$ emphasizes the condition more strongly;
-- excessively large $s$ can reduce diversity or introduce artifacts.
+- $w=0$ uses the unconditional prediction;
+- $w=1$ uses the ordinary conditional prediction;
+- $w>1$ emphasizes the condition more strongly;
+- excessively large $w$ can reduce diversity or introduce artifacts.
+
+The lecture may instead express an **extra guidance strength** $s=w-1$:
+
+$$
+v_{guided}
+=v_{cond}+s\left(v_{cond}-v_{uncond}\right)
+=(1+s)v_{cond}-s v_{uncond}.
+$$
+
+With that alternative convention, $s=0$ is ordinary conditional generation.
+The two formulas describe the same family of predictions only after accounting
+for the one-unit shift between $w$ and $s$.
 
 Thus guidance is not a new model. It combines two predictions from the same
 model to trade diversity for stronger condition adherence.
