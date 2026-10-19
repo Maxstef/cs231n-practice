@@ -10,6 +10,13 @@ from cs231n_practice.classifiers.autoencoder import (
     TinyAutoencoder,
     VAEEncoderView,
 )
+from cs231n_practice.classifiers.captioning import (
+    RecurrentCaptionDecoder,
+    TransformerCaptionDecoder,
+    caption_accuracies,
+    causal_attention_mask,
+    generate_captions,
+)
 from cs231n_practice.classifiers.cnn import SmallConvNet
 from cs231n_practice.classifiers.gan import (
     ConvolutionalDiscriminator,
@@ -64,6 +71,7 @@ __all__ = [
     "MLPDiscriminator",
     "MLPGenerator",
     "ProjectionHead",
+    "RecurrentCaptionDecoder",
     "RotationPredictionModel",
     "SmallConvNet",
     "SmallEncoder",
@@ -73,6 +81,7 @@ __all__ = [
     "TrainingResult",
     "TwoLayerNet",
     "TransformerSequenceClassifier",
+    "TransformerCaptionDecoder",
     "TwoStreamVideoClassifier",
     "TinyMaskedAutoencoder",
     "TinyAutoencoder",
@@ -81,6 +90,9 @@ __all__ = [
     "VAEEncoderView",
     "VelocityMLP",
     "classification_accuracy",
+    "caption_accuracies",
+    "causal_attention_mask",
+    "generate_captions",
     "linear_scores",
     "predict_linear",
     "softmax_loss_and_gradient",
