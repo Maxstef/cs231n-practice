@@ -56,7 +56,9 @@ can be explained and implemented—not merely that its lecture was watched.
       greedy decoding.
 - [x] Derive scaled dot-product and multi-head attention.
 - [x] Implement transformer building blocks.
-- [ ] Compare recurrent and transformer-based captioning.
+- [x] Compare recurrent and transformer-based captioning as conditional
+      autoregressive generation, connecting it to exact likelihood, teacher
+      forcing, causal masking, and sequential decoding.
 - [x] Study the Vision Transformer representation of images and run a small
       controlled CIFAR-10 experiment.
 
@@ -84,12 +86,16 @@ can be explained and implemented—not merely that its lecture was watched.
       and masked image modeling.
 - [x] Implement and compare autoregressive image models, autoencoders, and
       variational autoencoders.
-- [ ] Understand GAN generation, adversarial training, common architectures,
+- [x] Understand GAN generation, adversarial training, common architectures,
       and training difficulties through a small controlled experiment.
-- [ ] Understand diffusion as iterative noise-to-data generation, then practice
+- [x] Understand diffusion as iterative noise-to-data generation, then practice
       a simple rectified-flow training and sampling process.
-- [ ] Study conditional guidance, latent diffusion, and diffusion Transformers
+- [x] Study conditional guidance, latent diffusion, and diffusion Transformers
       at an intuition-first level without requiring full-scale training.
+- [x] Compare small image GAN and rectified-flow models in terms of training
+      behavior, diversity, generation speed, interpolation, and sensitivity.
+- [x] Summarize how autoregressive models, VAEs, GANs, diffusion, flow, and
+      conditional generation differ and how modern systems combine them.
 - [ ] 3D vision and neural implicit representations.
 - [ ] Vision-language models.
 - [ ] Robot learning and human-centered AI.
