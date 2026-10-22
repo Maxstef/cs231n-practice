@@ -35,6 +35,10 @@ from cs231n_practice.classifiers.linear import (
     train_linear_classifier,
 )
 from cs231n_practice.classifiers.neural_net import TwoLayerNet
+from cs231n_practice.classifiers.pointnet import (
+    TinyPointNet,
+    point_cloud_classification_accuracy,
+)
 from cs231n_practice.classifiers.rectified_flow import (
     ConditionalVelocityMLP,
     SmallImageVelocityNet,
@@ -85,6 +89,7 @@ __all__ = [
     "TwoStreamVideoClassifier",
     "TinyMaskedAutoencoder",
     "TinyAutoencoder",
+    "TinyPointNet",
     "TinyVisionTransformer",
     "TinyVAE",
     "VAEEncoderView",
@@ -95,6 +100,7 @@ __all__ = [
     "generate_captions",
     "linear_scores",
     "predict_linear",
+    "point_cloud_classification_accuracy",
     "softmax_loss_and_gradient",
     "svm_loss_and_gradient",
     "train_linear_classifier",
