@@ -17,6 +17,7 @@ from cs231n_practice.classifiers.captioning import (
     causal_attention_mask,
     generate_captions,
 )
+from cs231n_practice.classifiers.coordinate_mlp import CoordinateMLP
 from cs231n_practice.classifiers.cnn import SmallConvNet
 from cs231n_practice.classifiers.gan import (
     ConvolutionalDiscriminator,
@@ -69,6 +70,7 @@ __all__ = [
     "ConvolutionalGenerator",
     "ConvolutionalVAE",
     "ConditionalVelocityMLP",
+    "CoordinateMLP",
     "FineTunedClassifier",
     "KNearestNeighbor",
     "MAEEncoderView",
