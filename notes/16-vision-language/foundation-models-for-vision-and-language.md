@@ -1,0 +1,81 @@
+# Foundation models for vision and language
+
+A foundation model is pretrained on broad data and then reused for many tasks.
+The expensive pretraining stage learns general representations or capabilities;
+downstream use may involve fine-tuning, a small learned adapter, few-shot
+examples, or no additional parameter updates at all.
+
+```text
+broad pretraining data -> foundation model -> many downstream uses
+```
+
+This changes the traditional supervised-learning workflow. Instead of training
+one new model for every fixed label set, we try to reuse knowledge learned from
+large and varied data.
+
+## Several kinds of visual foundation model
+
+The term describes a role, not one architecture.
+
+| Family | Typical input and output | Main reusable capability |
+| --- | --- | --- |
+| CLIP-style dual encoder | image or text -> embedding | alignment, retrieval, zero-shot classification |
+| CoCa-style model | image and text -> embeddings and generated text | contrastive alignment plus captioning |
+| LLaVA-style VLM | image tokens and text tokens -> generated text | visual conversation and instruction following |
+| Flamingo-style VLM | interleaved images and text -> generated text | multimodal in-context learning |
+| SAM-style model | image and spatial prompt -> mask | promptable segmentation |
+| Model chain | several specialized models -> composed result | flexible multi-step reasoning or manipulation |
+
+Some models produce one global representation; others preserve visual tokens,
+generate language, predict dense masks, or call additional tools. Calling all
+of them foundation models does not imply that their training objectives or
+outputs are interchangeable.
+
+## Reuse modes
+
+- **Fine-tuning:** update some or all pretrained parameters for a task.
+- **Linear probing:** freeze the encoder and learn a small linear head.
+- **Zero-shot use:** express a new task using inputs the model already
+  understands, such as text class descriptions for CLIP.
+- **Few-shot or in-context use:** provide a small number of demonstrations in
+  the input without performing an ordinary parameter update.
+- **Prompting:** specify the requested concept or output through text, points,
+  boxes, masks, or other supported prompt types.
+
+Zero-shot does not mean that the model has never encountered related concepts
+during pretraining. It means that no labeled training examples for the new
+downstream task are used at adaptation time.
+
+## Why vision and language work well together
+
+Natural language supplies a flexible vocabulary. A fixed image classifier can
+only predict its predefined classes, while an image–text model can compare an
+image with new textual descriptions. Language can also express attributes,
+relations, instructions, and desired outputs that are awkward to represent as
+one fixed class index.
+
+The benefit depends on the training data. Web captions are abundant but often
+mention only the most salient content, omit spatial detail, contain errors, and
+reflect social or collection biases. Dense captions, pointing annotations, and
+carefully designed questions can provide stronger grounding, but they are much
+more expensive to collect.
+
+## Main intuition
+
+> A visual foundation model is valuable because one broadly trained interface
+> can be adapted or prompted for many tasks, not because one model literally
+> solves every visual problem.
+
+## Related practice and notes
+
+- [Notebook 66 — CLIP embeddings and contrastive alignment](../../notebooks/66_clip_embeddings_and_contrastive_alignment.ipynb)
+- [Self-supervised learning and evaluation](../12-self-supervised/self-supervised-learning-and-evaluation.md)
+- [CLIP and contrastive image–text learning](clip-and-contrastive-image-text-learning.md)
+
+## Sources
+
+- Stanford CS231n Spring 2025, Lecture 16: Vision and Language, available from
+  the [course schedule](https://cs231n.stanford.edu/2025/schedule.html).
+- Bommasani et al., [On the Opportunities and Risks of Foundation
+  Models](https://arxiv.org/abs/2108.07258).
+
