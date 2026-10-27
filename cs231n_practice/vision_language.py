@@ -146,3 +146,62 @@ def retrieve_top_k(
         raise ValueError("k cannot exceed the number of retrieval candidates")
     return torch.topk(scores, k=k, largest=True, sorted=True).indices
 
+
+def prompt_ensemble_prototypes(
+    prompt_embeddings: torch.Tensor,
+) -> torch.Tensor:
+    """Combine several text-prompt embeddings into one prototype per class.
+
+    Each prompt is normalized before averaging so that its magnitude does not
+    determine its influence. The average is normalized again because averaging
+    unit vectors does not generally produce another unit vector.
+
+    Args:
+        prompt_embeddings: Floating-point tensor shaped
+            (number_classes, number_prompts, embedding_width).
+
+    Returns:
+        Unit-length class prototypes shaped
+        (number_classes, embedding_width).
+    """
+    if not isinstance(prompt_embeddings, torch.Tensor):
+        raise TypeError("prompt_embeddings must be a PyTorch tensor")
+    if (
+        prompt_embeddings.ndim != 3
+        or any(size == 0 for size in prompt_embeddings.shape)
+    ):
+        raise ValueError(
+            "prompt_embeddings must have nonempty shape "
+            "(number_classes, number_prompts, embedding_width)"
+        )
+    if not prompt_embeddings.is_floating_point():
+        raise TypeError("prompt_embeddings must contain floating-point values")
+
+    normalized_prompts = F.normalize(prompt_embeddings, dim=2)
+    mean_prompts = normalized_prompts.mean(dim=1)
+    return F.normalize(mean_prompts, dim=1)
+
+
+def zero_shot_classify(
+    image_embeddings: torch.Tensor,
+    class_prototypes: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Classify images by cosine similarity to text-derived prototypes.
+
+    No image-specific classifier is fitted: each prototype acts like one
+    class-weight vector produced by a text encoder.
+
+    Args:
+        image_embeddings: Image representations shaped (N, D).
+        class_prototypes: Text-derived class representations shaped (C, D).
+
+    Returns:
+        A pair containing cosine-similarity scores shaped (N, C) and the
+        highest-scoring class index for each image, shaped (N,).
+    """
+    scores = image_text_similarity_matrix(
+        image_embeddings, class_prototypes
+    )
+    predictions = scores.argmax(dim=1)
+    return scores, predictions
+

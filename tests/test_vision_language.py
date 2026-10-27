@@ -4,7 +4,9 @@ import torch
 from cs231n_practice.vision_language import (
     clip_contrastive_loss,
     image_text_similarity_matrix,
+    prompt_ensemble_prototypes,
     retrieve_top_k,
+    zero_shot_classify,
 )
 
 
@@ -89,3 +91,40 @@ def test_vision_language_helpers_reject_invalid_inputs() -> None:
         retrieve_top_k(torch.eye(2), 0, 1, direction="unknown")
     with pytest.raises(ValueError, match="cannot exceed"):
         retrieve_top_k(torch.eye(2), 0, 3, direction="image_to_text")
+
+
+def test_prompt_ensemble_normalizes_prompts_and_final_prototypes() -> None:
+    prompt_embeddings = torch.tensor(
+        [
+            [[2.0, 0.0], [0.0, 4.0]],
+            [[-3.0, 0.0], [-2.0, 0.0]],
+        ]
+    )
+
+    prototypes = prompt_ensemble_prototypes(prompt_embeddings)
+
+    expected = torch.tensor(
+        [[2**-0.5, 2**-0.5], [-1.0, 0.0]]
+    )
+    torch.testing.assert_close(prototypes, expected)
+    torch.testing.assert_close(prototypes.norm(dim=1), torch.ones(2))
+
+
+def test_zero_shot_classify_returns_cosine_scores_and_predictions() -> None:
+    images = torch.tensor([[4.0, 0.0], [0.0, 3.0], [-2.0, 0.0]])
+    prototypes = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+
+    scores, predictions = zero_shot_classify(images, prototypes)
+
+    expected_scores = torch.tensor(
+        [[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]]
+    )
+    torch.testing.assert_close(scores, expected_scores)
+    torch.testing.assert_close(predictions, torch.tensor([0, 1, 1]))
+
+
+def test_prompt_ensemble_rejects_invalid_inputs() -> None:
+    with pytest.raises(ValueError, match="nonempty shape"):
+        prompt_ensemble_prototypes(torch.ones(2, 3))
+    with pytest.raises(TypeError, match="floating-point"):
+        prompt_ensemble_prototypes(torch.ones(2, 3, 4, dtype=torch.long))

@@ -93,6 +93,7 @@ relations, and concepts can still fall outside the learned representation.
 ## Related practice and notes
 
 - [Notebook 66 — CLIP embeddings and contrastive alignment](../../notebooks/66_clip_embeddings_and_contrastive_alignment.ipynb)
+- [Notebook 67 — Zero-shot classification and prompt design](../../notebooks/67_zero_shot_classification_and_prompt_design.ipynb)
 - [CLIP and contrastive image–text learning](clip-and-contrastive-image-text-learning.md)
 - [Zero-shot classification and prompt ensembling](zero-shot-classification-and-prompt-ensembling.md)
 
