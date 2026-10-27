@@ -31,6 +31,18 @@ relations, counts, and attribute binding. Carefully constructed benchmarks
 such as Winoground, CREPE, and ARO probe these weaknesses rather than relying
 only on ordinary category recognition.
 
+- **Winoground** presents two images and two captions made from the same words
+  in different orders. A model must match both captions correctly, so word
+  presence alone is insufficient.
+- **CREPE** tests systematicity—recombining familiar concepts in unfamiliar
+  ways—and productivity—understanding descriptions as their compositional
+  complexity grows. It includes hard negative captions with changed objects,
+  relations, swaps, or negations.
+- **ARO** stands for Attribution, Relation, and Order. Its tests alter
+  attribute–object bindings, relations between objects, or word order to check
+  whether a model understands structure rather than treating text as a bag of
+  words.
+
 ## Image-level captions are incomplete supervision
 
 Typical captions mention only some visible content. They may omit:
@@ -59,10 +71,11 @@ include:
 - licensing, privacy, and provenance;
 - insufficient coverage of compositional contrasts.
 
-The lecture’s Molmo and PixMo examples emphasize intentional data collection:
-dense captions, spoken descriptions converted to text, pointing, counting,
-and questions designed to elicit visual details. Smaller but more informative
-data can sometimes be more valuable than a much larger weakly curated corpus.
+The lecture’s [Molmo and PixMo](molmo-and-pixmo.md) examples emphasize
+intentional data collection: dense captions, spoken descriptions converted to
+text, pointing, counting, and questions designed to elicit visual details.
+Smaller but more informative data can sometimes be more valuable than a much
+larger weakly curated corpus.
 
 ## Distribution robustness is not universal understanding
 
@@ -91,3 +104,8 @@ relations, and concepts can still fall outside the learned representation.
   Supervision](https://arxiv.org/abs/2103.00020).
 - Thrush et al., [Winoground: Probing Vision and Language Models for
   Visio-Linguistic Compositionality](https://arxiv.org/abs/2204.03162).
+- Ma et al., [CREPE: Can Vision-Language Foundation Models Reason
+  Compositionally?](https://arxiv.org/abs/2212.07796).
+- Yuksekgonul et al., [When and why vision-language models behave like
+  bags-of-words, and what to do about it?](https://arxiv.org/abs/2210.01936).
+

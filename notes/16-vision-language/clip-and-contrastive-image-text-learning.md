@@ -87,6 +87,9 @@ reason dual encoders scale well to large retrieval collections.
 
 ## Relation to SimCLR
 
+For the image-only version of this idea, see
+[Contrastive learning, SimCLR, and InfoNCE](../12-self-supervised/contrastive-learning-simclr-and-infonce.md).
+
 SimCLR aligns two augmented views using one shared image encoder. CLIP aligns
 two different modalities using separate image and text encoders:
 
