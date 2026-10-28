@@ -85,6 +85,7 @@ VLM.
 ## Related notes
 
 - [Foundation models for vision and language](foundation-models-for-vision-and-language.md)
+- [Visual tokens, connectors, and multimodal fusion](visual-tokens-connectors-and-multimodal-fusion.md)
 - [CLIP limitations and data quality](clip-limitations-and-data-quality.md)
 - [Knowledge distillation](knowledge-distillation.md)
 

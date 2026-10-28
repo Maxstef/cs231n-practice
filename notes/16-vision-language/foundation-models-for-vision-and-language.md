@@ -75,8 +75,10 @@ intentionally collected vision-language data.
 ## Related practice and notes
 
 - [Notebook 66 — CLIP embeddings and contrastive alignment](../../notebooks/66_clip_embeddings_and_contrastive_alignment.ipynb)
+- [Notebook 68 — Visual tokens and multimodal fusion](../../notebooks/68_visual_tokens_and_multimodal_fusion.ipynb)
 - [Self-supervised learning and evaluation](../12-self-supervised/self-supervised-learning-and-evaluation.md)
 - [CLIP and contrastive image–text learning](clip-and-contrastive-image-text-learning.md)
+- [Visual tokens, connectors, and multimodal fusion](visual-tokens-connectors-and-multimodal-fusion.md)
 
 ## Sources
 
