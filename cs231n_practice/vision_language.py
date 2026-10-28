@@ -205,3 +205,105 @@ def zero_shot_classify(
     predictions = scores.argmax(dim=1)
     return scores, predictions
 
+
+def assemble_multimodal_sequence(
+    visual_tokens: torch.Tensor,
+    text_tokens: torch.Tensor,
+    visual_valid: torch.Tensor,
+    text_valid: torch.Tensor,
+    *,
+    visual_modality_embedding: torch.Tensor | None = None,
+    text_modality_embedding: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Concatenate visual and text tokens and their validity masks.
+
+    Visual tokens are placed first. Optional one-dimensional modality
+    embeddings are added to every token from the corresponding source.
+
+    Args:
+        visual_tokens: Floating-point tensor shaped (N, L_visual, D).
+        text_tokens: Floating-point tensor shaped (N, L_text, D).
+        visual_valid: Boolean mask shaped (N, L_visual), where True marks a
+            real token.
+        text_valid: Boolean mask shaped (N, L_text), where True marks a real
+            token rather than padding.
+        visual_modality_embedding: Optional vector shaped (D,).
+        text_modality_embedding: Optional vector shaped (D,).
+
+    Returns:
+        Joint tokens shaped (N, L_visual + L_text, D) and a Boolean validity
+        mask shaped (N, L_visual + L_text).
+    """
+    for tokens, name in (
+        (visual_tokens, "visual_tokens"),
+        (text_tokens, "text_tokens"),
+    ):
+        if not isinstance(tokens, torch.Tensor):
+            raise TypeError(f"{name} must be a PyTorch tensor")
+        if tokens.ndim != 3 or any(size == 0 for size in tokens.shape):
+            raise ValueError(f"{name} must have nonempty shape (N, L, D)")
+        if not tokens.is_floating_point():
+            raise TypeError(f"{name} must contain floating-point values")
+
+    if visual_tokens.shape[0] != text_tokens.shape[0]:
+        raise ValueError("visual and text token batch sizes must match")
+    if visual_tokens.shape[2] != text_tokens.shape[2]:
+        raise ValueError("visual and text token widths must match")
+    if visual_tokens.device != text_tokens.device:
+        raise ValueError("visual and text tokens must share a device")
+    if visual_tokens.dtype != text_tokens.dtype:
+        raise ValueError("visual and text tokens must share a dtype")
+
+    expected_masks = (
+        (
+            visual_valid,
+            visual_tokens.shape[:2],
+            "visual_valid",
+        ),
+        (
+            text_valid,
+            text_tokens.shape[:2],
+            "text_valid",
+        ),
+    )
+    for mask, expected_shape, name in expected_masks:
+        if not isinstance(mask, torch.Tensor):
+            raise TypeError(f"{name} must be a PyTorch tensor")
+        if mask.dtype != torch.bool:
+            raise TypeError(f"{name} must contain Boolean values")
+        if mask.shape != expected_shape:
+            raise ValueError(f"{name} must have shape {expected_shape}")
+        if mask.device != visual_tokens.device:
+            raise ValueError(f"{name} must share the token device")
+
+    model_dim = visual_tokens.shape[2]
+    modality_inputs = (
+        (
+            visual_modality_embedding,
+            visual_tokens,
+            "visual_modality_embedding",
+        ),
+        (
+            text_modality_embedding,
+            text_tokens,
+            "text_modality_embedding",
+        ),
+    )
+    tagged_tokens = []
+    for embedding, tokens, name in modality_inputs:
+        if embedding is not None:
+            if not isinstance(embedding, torch.Tensor):
+                raise TypeError(f"{name} must be a PyTorch tensor")
+            if embedding.shape != (model_dim,):
+                raise ValueError(f"{name} must have shape ({model_dim},)")
+            if embedding.device != tokens.device:
+                raise ValueError(f"{name} must share the token device")
+            if embedding.dtype != tokens.dtype:
+                raise ValueError(f"{name} must share the token dtype")
+            tokens = tokens + embedding
+        tagged_tokens.append(tokens)
+
+    joint_tokens = torch.cat(tagged_tokens, dim=1)
+    joint_valid = torch.cat((visual_valid, text_valid), dim=1)
+    return joint_tokens, joint_valid
+

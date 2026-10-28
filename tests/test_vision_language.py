@@ -2,6 +2,7 @@ import pytest
 import torch
 
 from cs231n_practice.vision_language import (
+    assemble_multimodal_sequence,
     clip_contrastive_loss,
     image_text_similarity_matrix,
     prompt_ensemble_prototypes,
@@ -128,3 +129,65 @@ def test_prompt_ensemble_rejects_invalid_inputs() -> None:
         prompt_ensemble_prototypes(torch.ones(2, 3))
     with pytest.raises(TypeError, match="floating-point"):
         prompt_ensemble_prototypes(torch.ones(2, 3, 4, dtype=torch.long))
+
+
+def test_assemble_multimodal_sequence_tags_and_concatenates_tokens() -> None:
+    visual_tokens = torch.zeros(2, 3, 4)
+    text_tokens = torch.ones(2, 2, 4)
+    visual_valid = torch.ones(2, 3, dtype=torch.bool)
+    text_valid = torch.tensor([[True, True], [True, False]])
+    visual_modality = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    text_modality = torch.tensor([-1.0, -2.0, -3.0, -4.0])
+
+    joint_tokens, joint_valid = assemble_multimodal_sequence(
+        visual_tokens,
+        text_tokens,
+        visual_valid,
+        text_valid,
+        visual_modality_embedding=visual_modality,
+        text_modality_embedding=text_modality,
+    )
+
+    assert joint_tokens.shape == (2, 5, 4)
+    torch.testing.assert_close(
+        joint_tokens[:, :3],
+        visual_modality.expand(2, 3, 4),
+    )
+    torch.testing.assert_close(
+        joint_tokens[:, 3:],
+        (torch.ones(4) + text_modality).expand(2, 2, 4),
+    )
+    torch.testing.assert_close(
+        joint_valid,
+        torch.cat((visual_valid, text_valid), dim=1),
+    )
+
+
+def test_assemble_multimodal_sequence_rejects_incompatible_inputs() -> None:
+    visual_tokens = torch.zeros(2, 3, 4)
+    text_tokens = torch.zeros(2, 2, 4)
+    visual_valid = torch.ones(2, 3, dtype=torch.bool)
+    text_valid = torch.ones(2, 2, dtype=torch.bool)
+
+    with pytest.raises(ValueError, match="widths"):
+        assemble_multimodal_sequence(
+            visual_tokens,
+            torch.zeros(2, 2, 5),
+            visual_valid,
+            text_valid,
+        )
+    with pytest.raises(TypeError, match="Boolean"):
+        assemble_multimodal_sequence(
+            visual_tokens,
+            text_tokens,
+            visual_valid.float(),
+            text_valid,
+        )
+    with pytest.raises(ValueError, match="shape"):
+        assemble_multimodal_sequence(
+            visual_tokens,
+            text_tokens,
+            visual_valid,
+            text_valid,
+            visual_modality_embedding=torch.zeros(5),
+        )
