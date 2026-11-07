@@ -30,8 +30,9 @@ def test_world_rendering_and_blocked_transitions() -> None:
     assert observation[0].sum() == 4
     assert observation[1, 5, 0] == 1
     assert observation[2, 0, 5] == 1
-    assert world.transition((0, 0), 0) == (0, 0)
-    assert world.transition((1, 1), 1) == (1, 1)
+    assert world.transition((0, 0), 0, goal_index=0) == (0, 0)
+    assert world.transition((2, 1), 1, goal_index=0) == (2, 1)
+    assert world.obstacles_for_goal(0) == world.obstacles_for_goal(1)
 
 
 def test_bfs_and_expert_reduce_shortest_path_distance() -> None:
@@ -39,9 +40,9 @@ def test_bfs_and_expert_reduce_shortest_path_distance() -> None:
     distances = world.shortest_path_distances(2)
     state = (5, 0)
     action = world.expert_action(state, 2)
-    next_state = world.transition(state, action)
+    next_state = world.transition(state, action, goal_index=2)
 
-    assert len(distances) == len(world.reachable_states) == 32
+    assert len(distances) == len(world.reachable_states(2)) == 32
     assert distances[next_state] == distances[state] - 1
 
 
@@ -106,13 +107,16 @@ def test_plot_helpers_accept_shared_policy_interface() -> None:
     figure_split, axes_split = plot_state_goal_split(
         world, data.state_goal_pairs, train
     )
-    figure_examples, axes_examples = plot_demonstration_examples(
-        world, data, {"training": train, "validation": np.arange(74, 93)}
+    validation = np.asarray(
+        [index for index in range(len(data.actions)) if index not in set(train)]
     )
-    predictions = data.actions[np.arange(74, 93)].clone()
+    figure_examples, axes_examples = plot_demonstration_examples(
+        world, data, {"training": train, "validation": validation}
+    )
+    predictions = data.actions[validation].clone()
     predictions[0] = (predictions[0] + 1) % len(world.action_names)
     figure_mistakes, axes_mistakes = plot_validation_mistakes(
-        world, data, np.arange(74, 93), predictions
+        world, data, validation, predictions
     )
     figure_paths, axes_paths = plot_policy_rollouts(
         world, {"expert": expert}, (5, 0)

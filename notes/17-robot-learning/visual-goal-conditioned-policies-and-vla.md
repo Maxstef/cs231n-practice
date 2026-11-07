@@ -45,6 +45,18 @@ Evaluate both:
 - **offline action accuracy** on labeled state-action pairs;
 - **closed-loop success**, where the policy must repeatedly act until it reaches the goal or the time limit.
 
+Failed rollouts are also useful diagnostics. A policy may repeatedly choose an action blocked by an obstacle, remain in one cell, or enter a loop even when most of its individual predictions are correct.
+
+## Practice connection
+
+[Notebook 72 — Visual goal-conditioned policies and VLA intuition](../../notebooks/72_visual_goal_conditioned_policies_and_vla_intuition.ipynb) compares two small CNN policies:
+
+- one receives obstacle, agent, and goal image channels;
+- the other receives the scene without the goal channel plus a learned instruction embedding;
+- both predict one of four discrete moves and are evaluated with one-step accuracy and closed-loop rollouts.
+
+Using a different obstacle layout for each goal makes navigation more varied, but it also creates a shortcut: the layout itself can reveal the requested task. A cleaner conditioning test would reuse layouts across goals or randomize layouts independently of the goal.
+
 ## Scope and limitations
 
 The grid-world exercise illustrates conditional control, not realistic robotics. Real VLA systems must also handle continuous actions, diverse cameras and embodiments, imperfect language, long tasks, safety constraints, and distribution shift.

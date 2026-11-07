@@ -26,8 +26,10 @@ class VisualGoalGridWorld:
     """
 
     grid_size: int = 6
-    obstacles: frozenset[State] = frozenset(
-        {(1, 2), (2, 2), (3, 2), (4, 4)}
+    obstacles_by_goal: tuple[frozenset[State], ...] = (
+        frozenset({(1, 2), (2, 2), (3, 2), (4, 4)}),
+        frozenset({(1, 2), (2, 2), (3, 2), (4, 4)}),
+        frozenset({(1, 2), (2, 2), (3, 2), (4, 4)}),
     )
     goals: tuple[State, ...] = ((0, 0), (0, 5), (5, 5))
     goal_names: tuple[str, ...] = ("top left", "top right", "bottom right")
@@ -47,9 +49,17 @@ class VisualGoalGridWorld:
             raise ValueError(
                 "action_deltas and action_names must have equal nonzero lengths"
             )
-        for state in (*self.obstacles, *self.goals):
+        if len(self.obstacles_by_goal) != len(self.goals):
+            raise ValueError("obstacles_by_goal must contain one layout per goal")
+        for state in (
+            *[state for layout in self.obstacles_by_goal for state in layout],
+            *self.goals,
+        ):
             self._validate_state(state)
-        if any(goal in self.obstacles for goal in self.goals):
+        if any(
+            goal in self.obstacles_by_goal[goal_index]
+            for goal_index, goal in enumerate(self.goals)
+        ):
             raise ValueError("goals cannot overlap obstacles")
 
     def _validate_state(self, state: State) -> None:
@@ -58,19 +68,28 @@ class VisualGoalGridWorld:
         if not all(0 <= value < self.grid_size for value in state):
             raise ValueError("state coordinates must lie inside the grid")
 
-    @property
-    def reachable_states(self) -> tuple[State, ...]:
-        """Return every non-obstacle state in row-major order."""
+    def obstacles_for_goal(self, goal_index: int) -> frozenset[State]:
+        """Return the obstacle layout associated with one requested goal."""
+        if not 0 <= goal_index < len(self.goals):
+            raise ValueError("goal_index is out of range")
+        return self.obstacles_by_goal[goal_index]
+
+    def reachable_states(self, goal_index: int) -> tuple[State, ...]:
+        """Return every non-obstacle state for one goal in row-major order."""
+        obstacles = self.obstacles_for_goal(goal_index)
         return tuple(
             (row, column)
             for row in range(self.grid_size)
             for column in range(self.grid_size)
-            if (row, column) not in self.obstacles
+            if (row, column) not in obstacles
         )
 
-    def transition(self, state: State, action: int) -> State:
+    def transition(self, state: State, action: int, goal_index: int) -> State:
         """Apply one discrete action, retaining the state when movement is blocked."""
         self._validate_state(state)
+        obstacles = self.obstacles_for_goal(goal_index)
+        if state in obstacles:
+            raise ValueError("the agent cannot occupy an obstacle")
         if isinstance(action, bool) or not isinstance(action, (int, np.integer)):
             raise TypeError("action must be an integer")
         action = int(action)
@@ -82,7 +101,7 @@ class VisualGoalGridWorld:
         if (
             0 <= candidate[0] < self.grid_size
             and 0 <= candidate[1] < self.grid_size
-            and candidate not in self.obstacles
+            and candidate not in obstacles
         ):
             return candidate
         return state
@@ -90,14 +109,13 @@ class VisualGoalGridWorld:
     def render(self, state: State, goal_index: int) -> np.ndarray:
         """Return a channel-first ``(3, H, W)`` obstacle/agent/goal observation."""
         self._validate_state(state)
-        if state in self.obstacles:
+        obstacles = self.obstacles_for_goal(goal_index)
+        if state in obstacles:
             raise ValueError("the agent cannot occupy an obstacle")
-        if not 0 <= goal_index < len(self.goals):
-            raise ValueError("goal_index is out of range")
         observation = np.zeros(
             (3, self.grid_size, self.grid_size), dtype=np.float32
         )
-        for row, column in self.obstacles:
+        for row, column in obstacles:
             observation[0, row, column] = 1.0
         observation[1, state[0], state[1]] = 1.0
         goal = self.goals[goal_index]
@@ -114,7 +132,7 @@ class VisualGoalGridWorld:
         while queue:
             state = queue.popleft()
             for action in range(len(self.action_deltas)):
-                neighbor = self.transition(state, action)
+                neighbor = self.transition(state, action, goal_index)
                 if neighbor not in distances:
                     distances[neighbor] = distances[state] + 1
                     queue.append(neighbor)
@@ -126,7 +144,7 @@ class VisualGoalGridWorld:
         if state not in distances:
             raise ValueError("state is not reachable from the requested goal")
         next_distances = [
-            distances.get(self.transition(state, action), np.inf)
+            distances.get(self.transition(state, action, goal_index), np.inf)
             for action in range(len(self.action_deltas))
         ]
         return int(np.argmin(next_distances))
@@ -151,7 +169,7 @@ def build_goal_conditioned_demonstrations(
     actions: list[int] = []
     pairs: list[tuple[State, int]] = []
     for goal_index, goal in enumerate(world.goals):
-        for state in world.reachable_states:
+        for state in world.reachable_states(goal_index):
             if state == goal:
                 continue
             observations.append(world.render(state, goal_index))
@@ -298,7 +316,7 @@ def rollout_policy(
     start: State,
     goal_index: int,
     *,
-    maximum_steps: int = 30,
+    maximum_steps: int = 20,
 ) -> PolicyRollout:
     """Run a greedy policy in closed loop until success or the step limit."""
     if maximum_steps <= 0:
@@ -310,7 +328,7 @@ def rollout_policy(
         if state == goal:
             break
         action = action_function(state, goal_index)
-        state = world.transition(state, action)
+        state = world.transition(state, action, goal_index)
         trajectory.append(state)
     return PolicyRollout(
         start=start,
@@ -325,7 +343,7 @@ def evaluate_closed_loop(
     action_function: ActionFunction,
     state_goal_pairs: Sequence[tuple[State, int]],
     *,
-    maximum_steps: int = 30,
+    maximum_steps: int = 20,
 ) -> tuple[float, list[PolicyRollout]]:
     """Evaluate every pair and return success rate plus complete rollouts."""
     rollouts = [
@@ -348,12 +366,11 @@ def plot_policy_rollouts(
     policies: Mapping[str, ActionFunction],
     start: State,
     *,
-    maximum_steps: int = 30,
+    maximum_steps: int = 20,
 ) -> tuple[plt.Figure, np.ndarray]:
     """Plot one complete trajectory per policy and requested goal."""
     if not policies:
         raise ValueError("policies cannot be empty")
-    obstacle_map = _obstacle_map(world)
     figure, axes = plt.subplots(
         len(policies),
         len(world.goals),
@@ -362,6 +379,7 @@ def plot_policy_rollouts(
     )
     for row, (policy_name, action_function) in enumerate(policies.items()):
         for goal_index, goal in enumerate(world.goals):
+            obstacle_map = _obstacle_map(world, goal_index)
             rollout = rollout_policy(
                 world,
                 action_function,
@@ -403,7 +421,6 @@ def plot_policy_action_fields(
     """Plot greedy actions at every non-goal state for one or more policies."""
     if not policies:
         raise ValueError("policies cannot be empty")
-    obstacle_map = _obstacle_map(world)
     figure, axes = plt.subplots(
         len(policies),
         len(world.goals),
@@ -412,6 +429,7 @@ def plot_policy_action_fields(
     )
     for row, (policy_name, action_function) in enumerate(policies.items()):
         for goal_index, goal in enumerate(world.goals):
+            obstacle_map = _obstacle_map(world, goal_index)
             axis = axes[row, goal_index]
             axis.imshow(
                 obstacle_map,
@@ -421,7 +439,7 @@ def plot_policy_action_fields(
             )
             matches = 0
             total = 0
-            for state in world.reachable_states:
+            for state in world.reachable_states(goal_index):
                 if state == goal:
                     continue
                 predicted = action_function(state, goal_index)
@@ -490,18 +508,20 @@ def plot_failed_rollouts(
         if rollout not in selected:
             selected.append(rollout)
 
-    obstacle_map = _obstacle_map(world)
     figure, axes = plt.subplots(
         len(selected), 2, figsize=(9, 3.8 * len(selected)), squeeze=False
     )
     for row_index, rollout in enumerate(selected):
+        obstacle_map = _obstacle_map(world, rollout.goal_index)
         goal = world.goals[rollout.goal_index]
         rows = [state[0] for state in rollout.trajectory]
         columns = [state[1] for state in rollout.trajectory]
         visit_counts = np.zeros((world.grid_size, world.grid_size), dtype=float)
         for grid_row, column in rollout.trajectory:
             visit_counts[grid_row, column] += 1
-        for obstacle_row, obstacle_column in world.obstacles:
+        for obstacle_row, obstacle_column in world.obstacles_for_goal(
+            rollout.goal_index
+        ):
             visit_counts[obstacle_row, obstacle_column] = np.nan
 
         path_axis, count_axis = axes[row_index]
@@ -553,7 +573,7 @@ def plot_state_goal_split(
     axes = np.atleast_1d(axes)
     for goal_index, axis in enumerate(axes):
         split_map = np.zeros((world.grid_size, world.grid_size), dtype=int)
-        for row, column in world.obstacles:
+        for row, column in world.obstacles_for_goal(goal_index):
             split_map[row, column] = 3
         for sample_index, (state, pair_goal) in enumerate(pairs):
             if pair_goal == goal_index:
@@ -665,10 +685,13 @@ def plot_validation_mistakes(
     return figure, axes
 
 
-def _obstacle_map(world: VisualGoalGridWorld) -> np.ndarray:
-    """Return a binary spatial obstacle map for plotting."""
+def _obstacle_map(
+    world: VisualGoalGridWorld,
+    goal_index: int,
+) -> np.ndarray:
+    """Return the binary obstacle map associated with one requested goal."""
     obstacle_map = np.zeros((world.grid_size, world.grid_size), dtype=int)
-    for row, column in world.obstacles:
+    for row, column in world.obstacles_for_goal(goal_index):
         obstacle_map[row, column] = 1
     return obstacle_map
 
