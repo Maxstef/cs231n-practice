@@ -339,6 +339,74 @@ def rollout_policy(
     )
 
 
+def rollout_policy_with_loop_recovery(
+    world: VisualGoalGridWorld,
+    action_function: ActionFunction,
+    start: State,
+    goal_index: int,
+    *,
+    maximum_steps: int = 20,
+    seed: int = 7,
+) -> PolicyRollout:
+    """Run a policy and use a random valid action to escape short loops.
+
+    Recovery activates after either three transitions that leave the agent in
+    one state or an ``A, B, A, B, A`` two-state cycle. It prefers an action
+    leading outside the four most recently visited states and otherwise picks
+    any valid action. Repeated actions alone do not activate recovery because
+    they may form a useful straight path.
+
+    The seed controls only recovery choices; the underlying policy remains
+    unchanged. This helper is therefore best treated as an external controller
+    heuristic and evaluated separately from the original greedy policy.
+    """
+    if maximum_steps <= 0:
+        raise ValueError("maximum_steps must be positive")
+    rng = np.random.default_rng(seed)
+    state = start
+    trajectory = [state]
+    goal = world.goals[goal_index]
+
+    for _ in range(maximum_steps):
+        if state == goal:
+            break
+
+        stalled = len(trajectory) >= 4 and len(set(trajectory[-4:])) == 1
+        two_state_cycle = (
+            len(trajectory) >= 5
+            and trajectory[-1] == trajectory[-3] == trajectory[-5]
+            and trajectory[-2] == trajectory[-4]
+        )
+        action = action_function(state, goal_index)
+
+        if stalled or two_state_cycle:
+            valid_actions = [
+                candidate
+                for candidate in range(len(world.action_names))
+                if world.transition(state, candidate, goal_index) != state
+            ]
+            recent_states = set(trajectory[-4:])
+            unexplored_actions = [
+                candidate
+                for candidate in valid_actions
+                if world.transition(state, candidate, goal_index)
+                not in recent_states
+            ]
+            choices = unexplored_actions or valid_actions
+            if choices:
+                action = int(rng.choice(choices))
+
+        state = world.transition(state, action, goal_index)
+        trajectory.append(state)
+
+    return PolicyRollout(
+        start=start,
+        goal_index=goal_index,
+        trajectory=tuple(trajectory),
+        succeeded=state == goal,
+    )
+
+
 def evaluate_closed_loop(
     world: VisualGoalGridWorld,
     action_function: ActionFunction,

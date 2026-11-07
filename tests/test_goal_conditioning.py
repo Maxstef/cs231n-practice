@@ -19,6 +19,7 @@ from cs231n_practice.goal_conditioning import (
     plot_state_goal_split,
     plot_validation_mistakes,
     rollout_policy,
+    rollout_policy_with_loop_recovery,
     run_goal_conditioning_experiment,
     split_demonstrations,
 )
@@ -94,6 +95,50 @@ def test_rollout_step_limit_records_initial_and_resulting_states() -> None:
 
     assert not rollout.succeeded
     assert len(rollout.trajectory) == 5
+
+
+def test_loop_recovery_escapes_stall_and_two_state_cycle() -> None:
+    world = VisualGoalGridWorld()
+    always_up = lambda state, goal_index: 0
+    stalled = rollout_policy_with_loop_recovery(
+        world, always_up, (0, 0), 2, maximum_steps=5, seed=3
+    )
+
+    def alternate_horizontally(state, goal_index):
+        return 1 if state == (5, 0) else 3
+
+    cycling = rollout_policy_with_loop_recovery(
+        world,
+        alternate_horizontally,
+        (5, 0),
+        2,
+        maximum_steps=6,
+        seed=3,
+    )
+
+    assert len(set(stalled.trajectory[:4])) == 1
+    assert stalled.trajectory[4] != stalled.trajectory[3]
+    assert cycling.trajectory[:5] == (
+        (5, 0), (5, 1), (5, 0), (5, 1), (5, 0)
+    )
+    assert cycling.trajectory[5] not in {(5, 0), (5, 1)}
+
+
+def test_loop_recovery_is_reproducible_and_preserves_progress() -> None:
+    world = VisualGoalGridWorld()
+    always_up = lambda state, goal_index: 0
+    first = rollout_policy_with_loop_recovery(
+        world, always_up, (0, 0), 2, maximum_steps=8, seed=11
+    )
+    second = rollout_policy_with_loop_recovery(
+        world, always_up, (0, 0), 2, maximum_steps=8, seed=11
+    )
+    expert = lambda state, goal_index: world.expert_action(state, goal_index)
+    ordinary = rollout_policy(world, expert, (5, 0), 2)
+    recovered = rollout_policy_with_loop_recovery(world, expert, (5, 0), 2)
+
+    assert first.trajectory == second.trajectory
+    assert recovered == ordinary
 
 
 def test_plot_helpers_accept_shared_policy_interface() -> None:
