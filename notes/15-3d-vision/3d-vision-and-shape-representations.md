@@ -107,6 +107,8 @@ Before choosing a model, ask whether the task primarily needs surface
 sampling, rendering, inside/outside queries, local connectivity, memory
 efficiency, editing, or semantic structure.
 
+Related note: [Camera geometry basics](camera-geometry-basics.md).
+
 ## Source
 
 - Stanford CS231n Spring 2025, Lecture 15: 3D Vision, available from the
