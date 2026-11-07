@@ -77,6 +77,8 @@ $$
 a = \arg\max_a Q(s,a).
 $$
 
+For large or visual state spaces, a table is impractical. A **deep Q-network (DQN)** instead uses a neural network to approximate all action values from an observation. In the Atari example, stacked image frames provide motion context and the output contains one Q-value per available game action. The basic interpretation of $Q(s,a)$ remains the same; only its representation changes from a table to a learned function.
+
 ## Exploration and evaluation
 
 Always choosing the current best action can prevent discovery of better behavior. An $\epsilon$-greedy policy chooses a random action with probability $\epsilon$ and a greedy action otherwise.

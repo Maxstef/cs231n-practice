@@ -96,9 +96,14 @@ can be explained and implemented—not merely that its lecture was watched.
       behavior, diversity, generation speed, interpolation, and sensitivity.
 - [x] Summarize how autoregressive models, VAEs, GANs, diffusion, flow, and
       conditional generation differ and how modern systems combine them.
-- [ ] 3D vision and neural implicit representations.
-- [ ] Vision-language models.
-- [ ] Robot learning and human-centered AI.
+- [x] Study 3D representations, point-cloud learning, camera geometry, neural
+      implicit fields, signed-distance functions, and positional encoding.
+- [x] Study contrastive vision-language learning, zero-shot classification,
+      prompt sensitivity, visual tokens, and multimodal fusion.
+- [x] Study robot perception, reinforcement and imitation learning, learned
+      dynamics and MPC, goal-conditioned policies, VLA intuition, and
+      closed-loop evaluation.
+- [ ] Study human-centered AI.
 
 ## Topic completion checklist
 

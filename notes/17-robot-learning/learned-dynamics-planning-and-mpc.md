@@ -10,6 +10,12 @@ The model may be known from physics or learned from transition data. A learned m
 
 The dynamics model is not itself a policy. It predicts the consequence of a proposed action; a controller or planner compares those predicted consequences and decides which action to execute. Model-free control may map a state directly to an action, while model-based control inserts prediction and planning between them.
 
+## State, pixel, and world models
+
+A dynamics model may predict compact physical state, future images, object particles, or learned latent features. Pixel models avoid requiring a hand-designed state but must predict many visually irrelevant details. Particle or object-centric representations can make physical structure more explicit, while latent models may be more compact but harder to interpret.
+
+A **world model** is the broader idea of learning action-conditioned future predictions. A foundation world model attempts to scale this across many environments and tasks. It can support planning or supply imagined experience to a policy, but usefulness still depends on accurate predictions in the situations the policy visits.
+
 ## Planning with a model
 
 A planner compares possible future action sequences without executing all of them in the real environment:
