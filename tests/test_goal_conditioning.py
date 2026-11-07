@@ -13,11 +13,13 @@ from cs231n_practice.goal_conditioning import (
     evaluate_closed_loop,
     plot_demonstration_examples,
     plot_failed_rollouts,
+    plot_experiment_losses,
     plot_policy_action_fields,
     plot_policy_rollouts,
     plot_state_goal_split,
     plot_validation_mistakes,
     rollout_policy,
+    run_goal_conditioning_experiment,
     split_demonstrations,
 )
 
@@ -149,3 +151,19 @@ def test_invalid_world_and_split_inputs_are_rejected() -> None:
         VisualGoalGridWorld(grid_size=0)
     with pytest.raises(ValueError, match="between"):
         split_demonstrations(10, training_fraction=1.0)
+
+
+def test_configurable_experiment_returns_models_metrics_and_losses() -> None:
+    experiment = run_goal_conditioning_experiment(
+        VisualGoalGridWorld(), epochs=2, seed=3
+    )
+    figure, axis = plot_experiment_losses(experiment)
+
+    assert len(experiment.visual_losses) == 2
+    assert len(experiment.instruction_losses) == 2
+    assert 0.0 <= experiment.visual_validation_accuracy <= 1.0
+    assert 0.0 <= experiment.instruction_validation_accuracy <= 1.0
+    assert 0.0 <= experiment.visual_closed_loop_success <= 1.0
+    assert 0.0 <= experiment.instruction_closed_loop_success <= 1.0
+    assert len(axis.lines) == 2
+    matplotlib.pyplot.close(figure)

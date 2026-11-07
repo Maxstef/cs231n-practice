@@ -3,6 +3,7 @@
 from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from functools import partial
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -359,6 +360,164 @@ def evaluate_closed_loop(
     if not rollouts:
         raise ValueError("state_goal_pairs cannot be empty")
     return float(np.mean([rollout.succeeded for rollout in rollouts])), rollouts
+
+
+@dataclass(frozen=True)
+class GoalConditioningExperiment:
+    """Models, learning curves, and metrics from one configurable experiment."""
+
+    world: VisualGoalGridWorld
+    demonstrations: GoalConditionedDemonstrations
+    training_indices: np.ndarray
+    validation_indices: np.ndarray
+    visual_policy: VisualGoalPolicy
+    instruction_policy: TinyVisionLanguageActionPolicy
+    visual_losses: tuple[float, ...]
+    instruction_losses: tuple[float, ...]
+    visual_validation_accuracy: float
+    instruction_validation_accuracy: float
+    visual_closed_loop_success: float
+    instruction_closed_loop_success: float
+
+
+def run_goal_conditioning_experiment(
+    world: VisualGoalGridWorld,
+    *,
+    epochs: int = 150,
+    learning_rate: float = 3e-3,
+    training_fraction: float = 0.8,
+    seed: int = 7,
+    maximum_steps: int = 20,
+    device: str | torch.device = "cpu",
+) -> GoalConditioningExperiment:
+    """Train and evaluate visual-goal and instruction-conditioned policies.
+
+    The two models use the same demonstrations and split. The visual policy
+    receives all three image channels, whereas the instruction policy receives
+    only obstacle/agent channels plus the goal index as an instruction.
+    """
+    if epochs <= 0:
+        raise ValueError("epochs must be positive")
+    if learning_rate <= 0:
+        raise ValueError("learning_rate must be positive")
+
+    device = torch.device(device)
+    torch.manual_seed(seed)
+    demonstrations = build_goal_conditioned_demonstrations(world)
+    training_indices, validation_indices = split_demonstrations(
+        len(demonstrations.actions),
+        training_fraction=training_fraction,
+        seed=seed,
+    )
+    training_actions = demonstrations.actions[training_indices].to(device)
+
+    visual_policy = VisualGoalPolicy(
+        grid_size=world.grid_size,
+        number_actions=len(world.action_names),
+    ).to(device)
+    visual_optimizer = torch.optim.Adam(
+        visual_policy.parameters(), lr=learning_rate
+    )
+    visual_training = demonstrations.observations[training_indices].to(device)
+    visual_losses: list[float] = []
+    for _ in range(epochs):
+        visual_optimizer.zero_grad()
+        loss = torch.nn.functional.cross_entropy(
+            visual_policy(visual_training), training_actions
+        )
+        loss.backward()
+        visual_optimizer.step()
+        visual_losses.append(float(loss.detach().cpu()))
+
+    instruction_policy = TinyVisionLanguageActionPolicy(
+        grid_size=world.grid_size,
+        number_instructions=len(world.goals),
+        number_actions=len(world.action_names),
+    ).to(device)
+    instruction_optimizer = torch.optim.Adam(
+        instruction_policy.parameters(), lr=learning_rate
+    )
+    instruction_training = demonstrations.observations[
+        training_indices, :2
+    ].to(device)
+    training_goals = demonstrations.goal_indices[training_indices].to(device)
+    instruction_losses: list[float] = []
+    for _ in range(epochs):
+        instruction_optimizer.zero_grad()
+        loss = torch.nn.functional.cross_entropy(
+            instruction_policy(instruction_training, training_goals),
+            training_actions,
+        )
+        loss.backward()
+        instruction_optimizer.step()
+        instruction_losses.append(float(loss.detach().cpu()))
+
+    validation_observations = demonstrations.observations[
+        validation_indices
+    ].to(device)
+    validation_goals = demonstrations.goal_indices[validation_indices].to(device)
+    validation_actions = demonstrations.actions[validation_indices].to(device)
+    with torch.no_grad():
+        visual_predictions = visual_policy(validation_observations).argmax(dim=1)
+        instruction_predictions = instruction_policy(
+            validation_observations[:, :2], validation_goals
+        ).argmax(dim=1)
+    visual_accuracy = float(
+        (visual_predictions == validation_actions).float().mean().cpu()
+    )
+    instruction_accuracy = float(
+        (instruction_predictions == validation_actions).float().mean().cpu()
+    )
+
+    visual_action = partial(visual_goal_policy_action, visual_policy, world)
+    instruction_action = partial(
+        instruction_policy_action, instruction_policy, world
+    )
+    visual_success, _ = evaluate_closed_loop(
+        world,
+        visual_action,
+        demonstrations.state_goal_pairs,
+        maximum_steps=maximum_steps,
+    )
+    instruction_success, _ = evaluate_closed_loop(
+        world,
+        instruction_action,
+        demonstrations.state_goal_pairs,
+        maximum_steps=maximum_steps,
+    )
+    return GoalConditioningExperiment(
+        world=world,
+        demonstrations=demonstrations,
+        training_indices=training_indices,
+        validation_indices=validation_indices,
+        visual_policy=visual_policy,
+        instruction_policy=instruction_policy,
+        visual_losses=tuple(visual_losses),
+        instruction_losses=tuple(instruction_losses),
+        visual_validation_accuracy=visual_accuracy,
+        instruction_validation_accuracy=instruction_accuracy,
+        visual_closed_loop_success=visual_success,
+        instruction_closed_loop_success=instruction_success,
+    )
+
+
+def plot_experiment_losses(
+    experiment: GoalConditioningExperiment,
+) -> tuple[plt.Figure, plt.Axes]:
+    """Compare both training-loss histories from one experiment."""
+    figure, axis = plt.subplots(figsize=(7, 4))
+    axis.plot(experiment.visual_losses, label="visual goal")
+    axis.plot(experiment.instruction_losses, label="instruction goal")
+    axis.set(
+        xlabel="epoch",
+        ylabel="cross-entropy loss",
+        title=f"Training losses ({experiment.world.grid_size}×"
+        f"{experiment.world.grid_size})",
+    )
+    axis.grid(alpha=0.25)
+    axis.legend()
+    figure.tight_layout()
+    return figure, axis
 
 
 def plot_policy_rollouts(
