@@ -103,7 +103,7 @@ can be explained and implemented—not merely that its lecture was watched.
 - [x] Study robot perception, reinforcement and imitation learning, learned
       dynamics and MPC, goal-conditioned policies, VLA intuition, and
       closed-loop evaluation.
-- [ ] Study human-centered AI.
+- [x] Study human-centered AI.
 
 ## Topic completion checklist
 
